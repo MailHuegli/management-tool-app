@@ -21,6 +21,7 @@ window.MAINTAIN_CONFIG = {
     branch: "main",
     dataPath:      "data/cockpit-data.json",     // hier speichert das Tool deine Zahlen
     kennzahlenPath:"_kennzahlen_v2.json",         // Planungs-Kennzahlen (privat)
-    einsatzplanPath:"WSG_Touren_Dashboard.html"   // interaktiver Touren-Editor (privat) für den Planungs-Tab
+    einsatzplanPath:"WSG_Touren_Dashboard.html",  // interaktiver Touren-Editor (privat)
+    jahresplanPath:"WSG_Jahresplan.html"          // 52-Wochen-Jahresplan (privat)
   }
 };
