@@ -191,15 +191,16 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 
 <!-- PLANUNG -->
 <section class="tabpane" data-pane="planung">
-  <h2 class="sec">Tourenplanung / Einsatzplan</h2>
-  <div class="lead">Routen, Takte (UR/SR/GU/TH), Jahres-Overlay & Karte</div>
+  <h2 class="sec">Tourenplanung — interaktiver Editor</h2>
+  <div class="lead">Objekte per Drag&Drop zwischen Touren verschieben · Undo/Redo · Auto-Ausgleich · Live-Recalc</div>
   <div class="kpis" id="planKpis" style="margin-bottom:14px"></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-    <a class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" href="WSG_Einsatzplan_v2.html" target="_blank" rel="noopener">↗ In neuem Tab öffnen (Vollbild)</a>
-    <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="reloadPlan">⟳ Neu laden</button>
+    <button class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" id="planLoadBtn">⟳ Editor laden</button>
+    <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="planOpenBtn" disabled>↗ In neuem Tab öffnen</button>
   </div>
-  <iframe class="plan" id="planFrame" title="Einsatzplan" loading="lazy"></iframe>
-  <div class="src" style="margin-top:8px">Der Einsatzplan ist hier eingebettet. Änderungen an den Kennzahlen erscheinen nach „Ist-Werte aus Tourenplanung laden".</div>
+  <div id="planMsg" class="callout" style="display:none"></div>
+  <iframe class="plan" id="planFrame" title="Einsatzplan" loading="lazy" style="display:none"></iframe>
+  <div class="src" style="margin-top:8px">Der Editor liegt in deinem privaten Repo und wird nach der GitHub-Verbindung hier geladen. „☁ In GitHub speichern" (im Editor) schreibt deine Touren-Zuordnungen ins private Repo — geräteübergreifend.</div>
 </section>
 
 <!-- BENCHMARK -->
@@ -227,7 +228,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
       <div class="fld"><label>Branch</label><input type="text" id="ghBranch"></div>
       <div class="fld"><label>Daten-Datei (Pfad)</label><input type="text" id="ghDataPath"></div>
       <div class="fld"><label>Kennzahlen-Datei (Planung)</label><input type="text" id="ghKennzahlenPath"></div>
-      <div class="fld"><label>Einsatzplan-Datei (Planung)</label><input type="text" id="ghEinsatzplanPath"></div>
+      <div class="fld"><label>Touren-Editor-Datei (Planung)</label><input type="text" id="ghEinsatzplanPath"></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px">
       <button class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" id="ghConnectBtn">🔌 Verbinden & Laden</button>
@@ -560,6 +561,7 @@ const GH=Object.assign({token:'',owner:'',repo:'',branch:'main',dataPath:'data/c
   (window.MAINTAIN_CONFIG&&window.MAINTAIN_CONFIG.github)||{});
 GH.dataSha=null; GH.connected=false; GH.repoName=''; GH.repoPrivate=null;
 try{const g=JSON.parse(localStorage.getItem(GHLS)||'null');if(g)Object.assign(GH,g);}catch(e){}
+if(GH.einsatzplanPath==='WSG_Einsatzplan_v2.html'){GH.einsatzplanPath='WSG_Touren_Dashboard.html';}  /* Umstieg statische Ansicht -> interaktiver Editor */
 function ghSaveCfg(){try{localStorage.setItem(GHLS,JSON.stringify({token:GH.token,owner:GH.owner,repo:GH.repo,branch:GH.branch,dataPath:GH.dataPath,kennzahlenPath:GH.kennzahlenPath,einsatzplanPath:GH.einsatzplanPath}));}catch(e){}}
 function ghHeaders(){return {'Authorization':'Bearer '+GH.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
 function ghEnc(p){return p.split('/').map(encodeURIComponent).join('/');}
@@ -612,11 +614,19 @@ function renderGithub(){
 
 /* ===== Tourenplanung ===== */
 let planLoaded=false;
-async function loadFrame(){const f=document.getElementById('planFrame');if(f.dataset.loaded)return;
- if(GH.connected&&GH.token&&GH.einsatzplanPath){
-  try{const file=await ghGetFile(GH.einsatzplanPath);if(file){const blob=new Blob([file.text],{type:'text/html'});f.setAttribute('src',URL.createObjectURL(blob));f.dataset.loaded='1';planLoaded=true;return;}}catch(e){}
- }
- f.setAttribute('src',GH.einsatzplanPath||'WSG_Einsatzplan_v2.html');f.dataset.loaded='1';planLoaded=true;}
+async function loadFrame(force){
+ const f=document.getElementById('planFrame'), msg=document.getElementById('planMsg'), openBtn=document.getElementById('planOpenBtn');
+ if(f.dataset.loaded && !force) return;
+ const showMsg=h=>{msg.style.display='block';msg.innerHTML=h;f.style.display='none';openBtn.disabled=true;f.dataset.loaded='';};
+ const showFrame=url=>{f.setAttribute('src',url);f.style.display='';msg.style.display='none';f.dataset.loaded='1';planLoaded=true;openBtn.disabled=false;openBtn.onclick=()=>window.open(url,'_blank');};
+ if(!(GH.connected&&GH.token)){ showMsg('Der Einsatzplan liegt in deinem <b>privaten</b> Repo. Verbinde dich zuerst im Tab <b>„GitHub-Sync"</b> — dann wird er hier geladen.'); return; }
+ if(!GH.einsatzplanPath){ showMsg('Kein Pfad für den Einsatzplan gesetzt — im Tab „GitHub-Sync" das Feld „Einsatzplan-Datei (Pfad)" ausfüllen.'); return; }
+ showMsg('Lade Einsatzplan aus '+GH.repoName+' …');
+ try{ const file=await ghGetFile(GH.einsatzplanPath);
+  if(file){ const blob=new Blob([file.text],{type:'text/html'}); showFrame(URL.createObjectURL(blob)); return; }
+  showMsg('⚠ Einsatzplan nicht gefunden unter <b>'+GH.einsatzplanPath+'</b> in '+GH.repoName+'.<br>→ Tab „GitHub-Sync" → Feld <b>Einsatzplan-Datei (Pfad)</b> anpassen (z. B. Unterordner voranstellen, falls du den Ordner als Unterordner gepusht hast).');
+ }catch(e){ showMsg('⚠ Fehler beim Laden: '+e.message); }
+}
 function renderPlanKpis(){
  const R=compute(M);
  const tiles=[{k:'Routen / Fahrzeuge',v:Math.round(M.routen)},{k:'FTE operativ',v:Math.round(M.fte*10)/10},{k:'Verrechenb. Std/Jahr',v:F(R.billH)},{k:'Verrechnungsgrad',v:P1(R.verrech*100)}];
@@ -674,7 +684,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.t
 document.querySelectorAll('#srcSeg button').forEach(b=>b.onclick=()=>{M.src=b.dataset.src;save();renderInputs();renderAll();});
 document.querySelectorAll('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;renderFinanzen();});
 document.getElementById('loadPlan').onclick=()=>loadPlan(false);
-document.getElementById('reloadPlan').onclick=()=>{const f=document.getElementById('planFrame');f.dataset.loaded='';loadFrame();};
+document.getElementById('planLoadBtn').onclick=()=>loadFrame(true);
 document.getElementById('uploadBtn').onclick=()=>document.getElementById('file').click();
 /* GitHub-Sync Events */
 document.getElementById('ghSaveTop').onclick=ghSaveData;
