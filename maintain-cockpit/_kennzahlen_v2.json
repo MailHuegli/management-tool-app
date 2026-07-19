@@ -1,0 +1,24 @@
+﻿{
+    "objekte":  120,
+    "hwRouten":  13,
+    "hwFte":  13,
+    "srFte":  0,
+    "fteTotal":  13,
+    "routen":  13,
+    "umsatz":  1591557,
+    "ebitda":  48514,
+    "ebit":  23514,
+    "ebitMarge":  0.0148,
+    "kategorienH":  {
+                        "UR":  17007,
+                        "TH":  2278,
+                        "GU":  1308,
+                        "SR":  938
+                    },
+    "ansaetze":  {
+                     "SR":  66,
+                     "GU":  88,
+                     "TH":  68,
+                     "UR":  70
+                 }
+}

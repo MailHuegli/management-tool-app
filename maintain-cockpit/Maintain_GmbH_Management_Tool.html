@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maintain GmbH — Management-Cockpit</title>
+<!-- == Zugangs-Guard (Token) ============================================= -->
+<script src="config.js"></script>
+<script>
+document.documentElement.style.visibility='hidden';
+(async function(){
+ async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+ try{const cfg=window.MAINTAIN_CONFIG||{};const tok=localStorage.getItem('maintain_access')||'';
+  if(cfg.accessHash && (!tok || (await sha(tok))!==cfg.accessHash)){ location.replace('index.html'); return; }
+ }catch(e){}
+ document.documentElement.style.visibility='';
+})();
+</script>
+<!-- ===================================================================== -->
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#172029;--mut:#647082;--line:#e2e7ee;--soft:#eef2f7;
+ --brand:#0f6e63;--brand2:#13877a;--ur:#13877a;--gu:#3f9d4f;--th:#e0912c;--sr:#8659c5;
+ --good:#1f9d6b;--warn:#d9822b;--bad:#d6453d;--shadow:0 1px 2px rgba(20,30,45,.05),0 8px 24px rgba(20,30,45,.06);}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1319;--card:#171d26;--ink:#e9eef4;--mut:#93a0b0;--line:#28313d;--soft:#1b222c;--brand:#1aa393;--brand2:#22b9a6;--ur:#17a595;--gu:#4bb85e;--th:#e2a24b;--sr:#9d72d8;--good:#35c489;--warn:#e6a24b;--bad:#f0645f;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.4);}}
+:root[data-theme="dark"]{--bg:#0f1319;--card:#171d26;--ink:#e9eef4;--mut:#93a0b0;--line:#28313d;--soft:#1b222c;--brand:#1aa393;--brand2:#22b9a6;--ur:#17a595;--gu:#4bb85e;--th:#e2a24b;--sr:#9d72d8;--good:#35c489;--warn:#e6a24b;--bad:#f0645f;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.4);}
+:root[data-theme="light"]{--bg:#f4f6f9;--card:#fff;--ink:#172029;--mut:#647082;--line:#e2e7ee;--soft:#eef2f7;--brand:#0f6e63;--brand2:#13877a;--ur:#13877a;--gu:#3f9d4f;--th:#e0912c;--sr:#8659c5;--good:#1f9d6b;--warn:#d9822b;--bad:#d6453d;--shadow:0 1px 2px rgba(20,30,45,.05),0 8px 24px rgba(20,30,45,.06);}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+header.hero{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;margin:0 -20px 0;padding:26px 20px 20px;border-radius:0 0 20px 20px}
+.hero .ey{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.85;font-weight:600}
+.hero h1{font-size:26px;margin:5px 0 4px}
+.hero p{margin:0;opacity:.92;font-size:14px;max-width:820px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+.btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;border-radius:9px;padding:8px 13px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:rgba(255,255,255,.22)} .btn.primary{background:#fff;border-color:#fff;color:var(--brand)}
+.status{font-size:12px;color:rgba(255,255,255,.9);margin:8px 0 2px;min-height:15px}
+/* Tabs */
+.tabs{display:flex;gap:2px;flex-wrap:wrap;margin:18px 0 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:20;padding-top:6px}
+.tab{border:0;background:transparent;color:var(--mut);padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--ink)} .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.tabpane{display:none;animation:fade .18s ease} .tabpane.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+h2.sec{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--brand);font-weight:700;margin:22px 0 4px}
+.lead{font-size:19px;font-weight:700;margin:0 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--shadow);border-left:4px solid var(--line)}
+.kpi.k-good{border-left-color:var(--good)} .kpi.k-warn{border-left-color:var(--warn)} .kpi.k-bad{border-left-color:var(--bad)}
+.kpi .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);font-weight:600}
+.kpi .v{font-size:23px;font-weight:750;margin-top:4px;letter-spacing:-.01em}
+.kpi.k-good .v{color:var(--good)} .kpi.k-warn .v{color:var(--warn)} .kpi.k-bad .v{color:var(--bad)}
+.kpi .s{font-size:11.5px;color:var(--mut);margin-top:2px}
+.kpi .badge{float:right;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px}
+.b-good{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.b-warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.b-bad{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:700}
+details.grp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0;margin-bottom:10px;box-shadow:var(--shadow)}
+details.grp>summary{cursor:pointer;padding:13px 16px;font-weight:700;font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+details.grp>summary::-webkit-details-marker{display:none}
+details.grp>summary .chev{color:var(--mut);font-size:12px}
+details.grp[open]>summary{border-bottom:1px solid var(--line)}
+.grp.accent>summary{color:var(--brand)}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px 14px;padding:14px 16px}
+.fld{display:flex;flex-direction:column;gap:3px}
+.fld label{font-size:11.5px;color:var(--mut)}
+.fld input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink);font-size:13.5px;font-variant-numeric:tabular-nums}
+.fld input:focus{outline:2px solid color-mix(in srgb,var(--brand) 40%,transparent);border-color:var(--brand)}
+.grp.accent .fld input{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-size:11px;text-transform:uppercase;color:var(--mut);font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px}
+.t-hi,.t-lo{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+.t-mid{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.t-ok{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+.callout{background:color-mix(in srgb,var(--brand) 8%,var(--card));border:1px solid color-mix(in srgb,var(--brand) 28%,var(--line));border-radius:12px;padding:13px 15px;font-size:13.5px}
+.measure{border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:10px;padding:11px 14px;margin-bottom:9px;background:var(--card)}
+.measure h4{margin:0 0 2px;font-size:14px}.measure h4 .imp{color:var(--good)}
+.measure .mm{font-size:11.5px;color:var(--mut);margin-top:5px}
+.grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+ul.clean{margin:6px 0 0;padding-left:18px}ul.clean li{margin-bottom:5px;font-size:13.5px}
+.src{font-size:11.5px;color:var(--mut)}.src a{color:var(--brand)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:12px;height:12px;border-radius:3px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{border:0;padding:8px 16px;font-weight:700;cursor:pointer;font-size:13px;background:transparent;color:var(--ink)}
+.seg button.on{background:var(--brand);color:#fff}
+.foot{color:var(--mut);font-size:12px;text-align:center;margin-top:28px;line-height:1.7}
+.themebtn{position:fixed;right:14px;bottom:14px;z-index:30;background:var(--card);border:1px solid var(--line);border-radius:50%;width:42px;height:42px;cursor:pointer;font-size:17px;box-shadow:var(--shadow)}
+svg{max-width:100%;height:auto}
+iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+@media print{.tabs,.toolbar,.themebtn{display:none}.tabpane{display:block!important}}
+</style>
+</head>
+<body>
+<button class="themebtn" id="themebtn">◐</button>
+<div class="wrap">
+<header class="hero">
+  <div class="ey">Management-Cockpit · Ist-Zahlen · Finanzen · Szenario · Tourenplanung</div>
+  <h1>Maintain GmbH — Steuerungs-Tool</h1>
+  <p>Alle Betriebs- und Finanzkennzahlen an einem Ort: tatsächliche Ist-Zahlen (Umsatz &amp; alle Kostenarten) eintragen, Finanz-Dashboard und Tourenplanung integriert. Das Summary hebt positive und kritische Werte automatisch hervor (grün/orange/rot gegen Best-Practice-Benchmark).</p>
+  <div class="toolbar">
+    <button class="btn primary" id="loadPlan">⟳ Ist-Werte aus Tourenplanung laden</button>
+    <button class="btn" id="uploadBtn">⬆ Gebäudeliste hochladen</button>
+    <button class="btn" id="resetBtn">↺ Zurücksetzen</button>
+    <button class="btn" id="exportBtn">⬇ Kennzahlen exportieren</button>
+    <input type="file" id="file" accept=".csv,text/csv" style="display:none">
+  </div>
+  <div class="status" id="status"></div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="uebersicht">Übersicht</button>
+  <button class="tab" data-tab="eingaben">Eingaben</button>
+  <button class="tab" data-tab="finanzen">Finanz-Dashboard</button>
+  <button class="tab" data-tab="szenario">Szenario &amp; Ziele</button>
+  <button class="tab" data-tab="planung">Tourenplanung</button>
+  <button class="tab" data-tab="benchmark">Benchmark</button>
+</nav>
+
+<!-- ÜBERSICHT -->
+<section class="tabpane active" data-pane="uebersicht">
+  <h2 class="sec">Summary — Ist-Lage auf einen Blick</h2>
+  <div class="lead" id="summaryLead">Live-Kennzahlen</div>
+  <div class="kpis" id="sumKpis"></div>
+  <div class="callout" style="margin-top:12px" id="summaryNote"></div>
+  <h2 class="sec" style="margin-top:26px">Ergebnisrechnung (live)</h2>
+  <div class="lead">Vom Umsatz zum EBIT</div>
+  <div class="card"><table id="plTable"></table></div>
+</section>
+
+<!-- EINGABEN -->
+<section class="tabpane" data-pane="eingaben">
+  <h2 class="sec">Datenquelle</h2>
+  <div class="card" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div class="seg" id="srcSeg">
+      <button data-src="ist">Ist-Zahlen (effektiv)</button>
+      <button data-src="plan">Kalkuliert (aus Planung)</button>
+    </div>
+    <div class="src" id="srcHint" style="flex:1;min-width:240px"></div>
+  </div>
+  <h2 class="sec">Eingaben — alle Werte editierbar</h2>
+  <div class="lead" id="inpLead">Umsatz, Kostenarten, Sätze, Löhne, Overhead</div>
+  <div id="inputGroups"></div>
+</section>
+
+<!-- FINANZEN -->
+<section class="tabpane" data-pane="finanzen">
+  <h2 class="sec">Finanz-Dashboard</h2>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    <div class="seg" id="finSeg"><button data-fin="ist" class="on">Ist</button><button data-fin="ziel">Ziel</button></div>
+    <span class="src" id="finScenNote"></span>
+  </div>
+  <div class="kpis" id="finKpis" style="margin-bottom:16px"></div>
+  <div class="grid2">
+    <div class="card"><h3>Umsatz nach Kategorie</h3><div id="revChart"></div></div>
+    <div class="card"><h3>EBIT-Marge vs. Ziel</h3><div id="gauge"></div></div>
+  </div>
+  <div class="card"><h3>Kostenstruktur (Anteil am Umsatz)</h3><div id="costBar"></div><div class="legend" id="costLeg"></div></div>
+  <div class="card"><h3>Ergebnisrechnung — vom Umsatz zum EBIT</h3><div id="waterfall"></div></div>
+  <h2 class="sec">Kostenstruktur vs. Benchmark</h2>
+  <div class="lead">Welche Position wie stark abweicht (in % vom Umsatz)</div>
+  <div class="card"><div id="costChart"></div><div class="src" style="margin-top:6px">Balken = Ist-Anteil · grünes Band = Best-Practice-Zielband (FM-KMU Schweiz).</div></div>
+  <div class="card"><table id="costTable"></table></div>
+</section>
+
+<!-- SZENARIO -->
+<section class="tabpane" data-pane="szenario">
+  <h2 class="sec">Szenario — Weg zur Ziel-Marge</h2>
+  <div class="lead">Ziel eintippen → Empfehlung generieren, oder Hebel manuell setzen</div>
+  <div class="card" style="display:flex;align-items:end;gap:14px;flex-wrap:wrap">
+    <div class="fld" style="max-width:150px"><label>Ziel-EBIT-Marge %</label><input type="number" step="0.5" id="targetMarge" value="6"></div>
+    <button class="btn primary" id="recBtn" style="background:var(--brand);border-color:var(--brand);color:#fff">⚡ Hebel-Empfehlung generieren</button>
+    <button class="btn" id="clearScen" style="border-color:var(--line);background:var(--card);color:var(--ink)">Hebel zurücksetzen</button>
+  </div>
+  <div id="recOut"></div>
+  <div class="card" id="scenLevers"></div>
+  <div class="kpis" id="scenKpis" style="margin:12px 0"></div>
+  <div class="card"><div id="scenBridge"></div><div class="src" style="margin-top:6px">Wasserfall: EBIT Ist → aktive Hebel → EBIT Ziel.</div></div>
+</section>
+
+<!-- PLANUNG -->
+<section class="tabpane" data-pane="planung">
+  <h2 class="sec">Tourenplanung / Einsatzplan</h2>
+  <div class="lead">Routen, Takte (UR/SR/GU/TH), Jahres-Overlay & Karte</div>
+  <div class="kpis" id="planKpis" style="margin-bottom:14px"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <a class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" href="WSG_Einsatzplan_v2.html" target="_blank" rel="noopener">↗ In neuem Tab öffnen (Vollbild)</a>
+    <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="reloadPlan">⟳ Neu laden</button>
+  </div>
+  <iframe class="plan" id="planFrame" title="Einsatzplan" loading="lazy"></iframe>
+  <div class="src" style="margin-top:8px">Der Einsatzplan ist hier eingebettet. Änderungen an den Kennzahlen erscheinen nach „Ist-Werte aus Tourenplanung laden".</div>
+</section>
+
+<!-- BENCHMARK -->
+<section class="tabpane" data-pane="benchmark">
+  <h2 class="sec">Best-Practice-Preise (Benchmark CH)</h2>
+  <div class="lead">Referenz für die Kostensätze</div>
+  <div class="card"><table id="rateTable"></table></div>
+  <div class="src" style="margin-top:8px" id="rateSrc"></div>
+  <h2 class="sec" style="margin-top:24px">Hebel & Planungs-Zielwerte</h2>
+  <div class="grid2">
+    <div class="card"><h3>Hebel zur EBIT-Verbesserung</h3><div id="levers"></div></div>
+    <div class="card"><h3>Planungs-Zielwerte</h3><ul class="clean" id="planRules"></ul></div>
+  </div>
+</section>
+
+<div class="foot" id="foot"></div>
+</div>
+<script>
+const F=x=>Math.round(x).toLocaleString('de-CH');
+const P1=x=>x.toFixed(1)+'%';
+const LS='maintain_cockpit_v1';
+
+/* ===== Modell / Defaults ===== */
+const DEF={
+ src:'plan',
+ /* Planungs-/Kalkulationsbasis */
+ hoursUR:17007,hoursTH:2278,hoursSR:938,hoursGU:1308,fte:13,routen:13,verrechHProFTE:1656,paidHProFTE:2184,
+ rateUR:70,rateTH:68,rateSR:66,rateGU:88,
+ nHauswarte:12,wageHwMt:5300,nVorarbeiter:1,wageVAMt:6200,wageGF:140000,months:13,socialPct:18,
+ fahrzeugProRoute:8000,materialPct:4,materialAufschlag:15,winterUms:60000,winterK:20000,abschreibung:25000,
+ verwMiete:30000,verwBackoffice:32214,verwTreuhand:14000,verwVers:9000,verwIT:16000,verwMkt:12000,verwDiv:9000,
+ /* Ist-Zahlen (effektiv) — Umsatz nach Kategorie */
+ istUR:0,istTH:0,istSR:0,istGU:0,istMat:0,istWinterUms:0,istUebrigUms:0,
+ /* Ist-Zahlen — Kosten */
+ istPersonalOp:0,istPersonalGF:0,istFahr:0,istMatK:0,istWinterK:0,istVerw:0,istAbschr:0,istSonstK:0
+};
+let M=Object.assign({},DEF);
+try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s)M=Object.assign({},DEF,s);}catch(e){}
+
+/* ===== Eingabegruppen je Datenquelle ===== */
+const GROUPS_IST=[
+ {title:'① Ist-Umsatz nach Kategorie (CHF/Jahr, exkl. MwSt.)',accent:true,fields:[['istUR','UR Unterhaltsreinigung'],['istTH','TH Techn. Hauswart'],['istSR','SR Spezialreinigung'],['istGU','GU Gartenunterhalt'],['istMat','Material weiterverrechnet'],['istWinterUms','Winterdienst'],['istUebrigUms','Übriger Umsatz']]},
+ {title:'② Ist-Kosten (CHF/Jahr)',accent:true,fields:[['istPersonalOp','Personal operativ (inkl. NK)'],['istPersonalGF','Geschäftsführung (inkl. NK)'],['istFahr','Fahrzeuge / Flotte'],['istMatK','Materialaufwand'],['istWinterK','Winterdienst-Kosten'],['istVerw','Verwaltung / Overhead total'],['istAbschr','Abschreibungen'],['istSonstK','Sonstige Kosten']]},
+ {title:'③ Kapazität (für Verrechnungsgrad & Umsatz/FTE)',fields:[['fte','FTE operativ'],['routen','Routen / Fahrzeuge'],['hoursUR','verrechenb. Std UR'],['hoursTH','verrechenb. Std TH'],['hoursSR','verrechenb. Std SR'],['hoursGU','verrechenb. Std GU'],['paidHProFTE','bezahlte Std/FTE·J']]},
+];
+const GROUPS_PLAN=[
+ {title:'Basis · Leistung (aus Tourenplanung oder Liste)',fields:[['hoursUR','UR Std/Jahr'],['hoursTH','TH Std/Jahr'],['hoursSR','SR Std/Jahr'],['hoursGU','GU Std/Jahr'],['fte','FTE operativ'],['routen','Routen / Fahrzeuge'],['verrechHProFTE','verrechenb. Std/FTE·J'],['paidHProFTE','bezahlte Std/FTE·J']]},
+ {title:'Kostensätze exkl. MwSt. (CHF/h)',accent:true,fields:[['rateUR','UR Unterhaltsreinigung'],['rateTH','TH Techn. Hauswart'],['rateSR','SR Spezialreinigung'],['rateGU','GU Gartenunterhalt']]},
+ {title:'Löhne & Struktur',fields:[['nHauswarte','Anzahl Hauswarte'],['wageHwMt','Hauswart Lohn/Mt'],['nVorarbeiter','Anzahl Vorarbeiter'],['wageVAMt','Vorarbeiter Lohn/Mt'],['wageGF','GF Lohn/Jahr'],['months','Monatslöhne (13.)'],['socialPct','Lohnnebenkosten %']]},
+ {title:'Betriebskosten',fields:[['fahrzeugProRoute','Fahrzeug CHF/Jahr'],['materialPct','Material % vom Umsatz'],['materialAufschlag','Material-Aufschlag %'],['winterUms','Winterdienst Umsatz'],['winterK','Winterdienst Kosten'],['abschreibung','Abschreibungen']]},
+ {title:'Verwaltung / Overhead',fields:[['verwMiete','Büro & Magazin Miete'],['verwBackoffice','Backoffice (Lohn+NK)'],['verwTreuhand','Treuhand/Buchhaltung'],['verwVers','Versicherungen'],['verwIT','IT/Software/Telekom'],['verwMkt','Marketing/Akquise'],['verwDiv','Büromaterial/Diverses']]},
+];
+function renderInputs(){
+ const G = M.src==='ist'?GROUPS_IST:GROUPS_PLAN;
+ document.getElementById('inputGroups').innerHTML=G.map((g,gi)=>`<details class="grp${g.accent?' accent':''}"${gi<2?' open':''}><summary>${g.title}<span class="chev">▾</span></summary><div class="fields">${g.fields.map(f=>`<div class="fld"><label>${f[1]}</label><input type="number" step="any" data-k="${f[0]}" value="${M[f[0]]}"></div>`).join('')}</div></details>`).join('');
+ document.querySelectorAll('#inputGroups input').forEach(el=>el.oninput=()=>{M[el.dataset.k]=parseFloat(el.value)||0;save();renderAll();});
+ document.getElementById('inpLead').textContent = M.src==='ist'?'Tatsächliche Ist-Zahlen: Umsatz nach Kategorie + alle Kostenarten':'Kalkuliert: Sätze × Stunden, Löhne, Overhead';
+ document.querySelectorAll('#srcSeg button').forEach(b=>b.classList.toggle('on',b.dataset.src===M.src));
+ document.getElementById('srcHint').innerHTML = M.src==='ist'
+   ? '<b>Ist-Modus:</b> Trage deine effektiven Zahlen aus der Buchhaltung ein — Umsatz je Kategorie und jede Kostenart als CHF/Jahr. Diese Werte bestimmen direkt Summary, Finanz-Dashboard und Szenario.'
+   : '<b>Kalkuliert-Modus:</b> Umsatz und Personal werden aus Sätzen × Stunden bzw. Köpfen × Löhnen berechnet — ideal für Planung/Was-wäre-wenn.';
+}
+function save(){localStorage.setItem(LS,JSON.stringify(M));}
+
+/* ===== Rechenkern (modusunabhängig) ===== */
+function base(m){
+ const soc=1+m.socialPct/100;
+ let revCat,ums,umsKern,matAuf,winterUms,uebrig,personalOp,personalGF,fahr,mat,winterK,verw,abschr,sonst;
+ if(m.src==='ist'){
+  umsKern=m.istUR+m.istTH+m.istSR+m.istGU; matAuf=m.istMat; winterUms=m.istWinterUms; uebrig=m.istUebrigUms;
+  revCat={UR:m.istUR,TH:m.istTH,SR:m.istSR,GU:m.istGU,Material:matAuf,Winter:winterUms,Uebrig:uebrig};
+  ums=umsKern+matAuf+winterUms+uebrig;
+  personalOp=m.istPersonalOp; personalGF=m.istPersonalGF; fahr=m.istFahr; mat=m.istMatK; winterK=m.istWinterK; verw=m.istVerw; abschr=m.istAbschr; sonst=m.istSonstK;
+ } else {
+  const rUR=m.hoursUR*m.rateUR,rTH=m.hoursTH*m.rateTH,rSR=m.hoursSR*m.rateSR,rGU=m.hoursGU*m.rateGU;
+  umsKern=rUR+rTH+rSR+rGU; mat=umsKern*m.materialPct/100; matAuf=mat*m.materialAufschlag/100; winterUms=m.winterUms; uebrig=0;
+  revCat={UR:rUR,TH:rTH,SR:rSR,GU:rGU,Material:matAuf,Winter:winterUms,Uebrig:0};
+  ums=umsKern+matAuf+winterUms;
+  personalOp=(m.nHauswarte*m.wageHwMt+m.nVorarbeiter*m.wageVAMt)*m.months*soc;
+  personalGF=m.wageGF*soc; fahr=m.routen*m.fahrzeugProRoute; winterK=m.winterK;
+  verw=m.verwMiete+m.verwBackoffice+m.verwTreuhand+m.verwVers+m.verwIT+m.verwMkt+m.verwDiv; abschr=m.abschreibung; sonst=0;
+ }
+ return {revCat,ums,umsKern,matAuf,winterUms,uebrig,personalOp,personalGF,fahr,mat,winterK,verw,abschr,sonst};
+}
+function compute(m){m=m||M;
+ const b=base(m);
+ const personal=b.personalOp+b.personalGF;
+ const ebitda=b.ums-personal-b.fahr-b.mat-b.winterK-b.verw-b.sonst;
+ const ebit=ebitda-b.abschr;
+ const billH=m.hoursUR+m.hoursTH+m.hoursSR+m.hoursGU;
+ const fte=m.fte||1;
+ const verrech=billH/(fte*(m.paidHProFTE||1));
+ return Object.assign(b,{personal,ebitda,ebit,billH,verrech,umsProFte:b.ums/fte,marge:ebit/(b.ums||1),margeEbitda:ebitda/(b.ums||1)});
+}
+/* Szenario als vollständiges Modell (mode-aware) */
+function applyScenario(M0,sc){const m=Object.assign({},M0);
+ const R=compute(m); const billH=R.billH; const blended=billH>0?R.umsKern/billH:0;
+ const matMarg=R.umsKern>0?R.mat/R.umsKern:(m.materialPct/100); const soc=1+m.socialPct/100;
+ if(sc.verrech&&sc.verrech.on){const tb=(m.fte||0)*(m.paidHProFTE||0)*sc.verrech.val/100;const extra=Math.max(0,tb-billH);const rev=extra*blended;
+  if(m.src==='ist'){m.istUebrigUms+=rev;m.istMatK+=rev*matMarg;} else if(billH>0){const f=(billH+extra)/billH;m.hoursUR*=f;m.hoursTH*=f;m.hoursSR*=f;m.hoursGU*=f;}}
+ if(sc.growth&&sc.growth.on&&sc.growth.val>0){const rev=sc.growth.val*blended;const nF=sc.growth.val/((m.paidHProFTE||1)*0.80);
+  if(m.src==='ist'){m.istUebrigUms+=rev;m.istMatK+=rev*matMarg;m.istPersonalOp+=nF*m.wageHwMt*m.months*soc;m.istFahr+=nF*m.fahrzeugProRoute;}
+  else{const b1=m.hoursUR+m.hoursTH+m.hoursSR+m.hoursGU;if(b1>0){const f=(b1+sc.growth.val)/b1;m.hoursUR*=f;m.hoursTH*=f;m.hoursSR*=f;m.hoursGU*=f;}m.nHauswarte+=nF;m.routen+=nF;}
+  m.fte+=nF;}
+ if(sc.price&&sc.price.on){const p=1+sc.price.val/100; if(m.src==='ist'){m.istUR*=p;m.istTH*=p;m.istSR*=p;m.istGU*=p;} else {m.rateUR*=p;m.rateTH*=p;m.rateSR*=p;m.rateGU*=p;}}
+ if(sc.overhead&&sc.overhead.on){ if(m.src==='ist'){m.istVerw=Math.max(0,m.istVerw-sc.overhead.val);} else {const vw=m.verwMiete+m.verwBackoffice+m.verwTreuhand+m.verwVers+m.verwIT+m.verwMkt+m.verwDiv;const f=Math.max(0,(vw-sc.overhead.val)/(vw||1));['verwMiete','verwBackoffice','verwTreuhand','verwVers','verwIT','verwMkt','verwDiv'].forEach(k=>m[k]*=f);}}
+ if(sc.winter&&sc.winter.on){ if(m.src==='ist'){m.istWinterUms+=sc.winter.val;} else {m.winterUms+=sc.winter.val;}}
+ return m;
+}
+function hl(v,goodAt,warnAt,higherBetter){ if(higherBetter){return v>=goodAt?'good':v>=warnAt?'warn':'bad';} return v<=goodAt?'good':v<=warnAt?'warn':'bad'; }
+function badge(c){return c==='good'?'<span class="badge b-good">gut</span>':c==='warn'?'<span class="badge b-warn">grenzwertig</span>':'<span class="badge b-bad">kritisch</span>';}
+
+/* ===== Übersicht ===== */
+function renderSummary(R){
+ const pPct=R.personalOp/R.ums*100, gfPct=R.personalGF/R.ums*100, verwPct=R.verw/R.ums*100;
+ const tiles=[
+  {k:'EBIT / Jahr',v:(R.ebit>=0?'+':'')+F(R.ebit)+' CHF',s:'Marge '+P1(R.marge*100),c:R.ebit>0?'good':'bad'},
+  {k:'EBIT-Marge',v:P1(R.marge*100),s:'Ziel 6–8 %',c:hl(R.marge*100,6,0,true)},
+  {k:'EBITDA',v:F(R.ebitda)+' CHF',s:P1(R.margeEbitda*100),c:R.ebitda>0?'good':'bad'},
+  {k:'Umsatz',v:F(R.ums)+' CHF',s:F(R.umsProFte)+' / FTE',c:hl(R.umsProFte,130000,118000,true)},
+  {k:'Verrechnungsgrad',v:P1(R.verrech*100),s:'Ziel 80–82 %',c:hl(R.verrech*100,80,76,true)},
+  {k:'Operatives Personal',v:P1(pPct),s:'Ziel 55–62 % v. Umsatz',c:hl(pPct,62,67,false)},
+  {k:'Führung (GF)',v:P1(gfPct),s:'Ziel ≤ 8 % v. Umsatz',c:hl(gfPct,8,12,false)},
+  {k:'Verwaltung',v:P1(verwPct),s:'Ziel ≤ 8 % v. Umsatz',c:hl(verwPct,8,10,false)},
+ ];
+ document.getElementById('sumKpis').innerHTML=tiles.map(t=>`<div class="kpi k-${t.c}">${badge(t.c)}<div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
+ const nbad=tiles.filter(t=>t.c==='bad').length, nwarn=tiles.filter(t=>t.c==='warn').length;
+ const lead=document.getElementById('summaryLead');
+ lead.innerHTML = R.ebit>=0 ? `Ergebnis positiv: EBIT <span style="color:var(--good)">+${F(R.ebit)}</span> (${P1(R.marge*100)})` : `Ergebnis negativ: EBIT <span style="color:var(--bad)">${F(R.ebit)}</span> (${P1(R.marge*100)})`;
+ document.getElementById('summaryNote').innerHTML = `<b>${tiles.filter(t=>t.c==='good').length} Kennzahlen gut</b>, ${nwarn} grenzwertig, <b style="color:var(--bad)">${nbad} kritisch</b>. `+ (nbad?'Rote Kennzahlen zuerst angehen — Hebel im Tab „Szenario & Ziele".':'Solide Basis — Fokus auf Wachstum in Leerkapazität (Marge Richtung 6–8 %).');
+}
+function renderPL(R){
+ const row=(l,v,b,ind)=>`<tr${b?' style="font-weight:700"':''}><td style="padding-left:${ind?24:10}px">${l}</td><td class="num" style="color:${v<0?'var(--bad)':(b&&v>0?'var(--good)':'inherit')}">${F(v)}</td></tr>`;
+ let t='<tr><th>Position</th><th class="num">CHF/Jahr</th></tr>';
+ t+=row('Umsatz Leistungen (UR/TH/SR/GU)',R.umsKern);
+ t+=row('Material weiterverrechnet',R.matAuf,false,1);
+ t+=row('Winterdienst-Umsatz',R.winterUms,false,1);
+ if(R.uebrig)t+=row('Übriger Umsatz',R.uebrig,false,1);
+ t+=row('= Umsatz total',R.ums,true);
+ t+=row('Personal operativ',-R.personalOp);
+ t+=row('Geschäftsführung',-R.personalGF);
+ t+=row('Fahrzeuge / Flotte',-R.fahr);
+ t+=row('Materialaufwand',-R.mat);
+ t+=row('Winterdienst-Kosten',-R.winterK);
+ t+=row('Verwaltung / Overhead',-R.verw);
+ if(R.sonst)t+=row('Sonstige Kosten',-R.sonst);
+ t+=row('= EBITDA',R.ebitda,true);
+ t+=row('Abschreibungen',-R.abschr);
+ t+=row('= EBIT',R.ebit,true);
+ document.getElementById('plTable').innerHTML=t;
+}
+
+/* ===== Finanz-Dashboard (integriert) ===== */
+let finMode='ist';
+function finModel(){return (finMode==='ziel'&&scenActive())?applyScenario(M,SCEN):M;}
+function scenActive(){return SCENL.some(l=>SCEN[l.id].on);}
+function renderFinToggle(){
+ document.querySelectorAll('#finSeg button').forEach(b=>b.classList.toggle('on',b.dataset.fin===finMode));
+ const act=scenActive();
+ document.getElementById('finScenNote').innerHTML = act? (finMode==='ziel'?'Ziel-Szenario aktiv: <b>'+scenSummary()+'</b>':'Ziel-Szenario verfügbar — auf „Ziel" schalten.') : 'Kein Ziel-Szenario gesetzt — Tab „Szenario & Ziele" → „⚡ Empfehlung generieren".';
+}
+const SCLAB={verrech:'Verrechnungsgrad',growth:'Wachstum',price:'Preis',overhead:'Overhead',winter:'Winterdienst'};
+function scenSummary(){return SCENL.filter(l=>SCEN[l.id].on).map(l=>SCLAB[l.id]).join(' · ');}
+function renderFinanzen(){
+ const MOD=finModel(), R=compute(MOD);
+ renderFinToggle();
+ const tiles=[
+  {k:'Umsatz',v:F(R.ums),s:'CHF/Jahr',c:'good'},
+  {k:'EBITDA',v:F(R.ebitda),s:P1(R.margeEbitda*100),c:R.ebitda>0?'good':'bad'},
+  {k:'EBIT',v:(R.ebit>=0?'+':'')+F(R.ebit),s:P1(R.marge*100),c:R.ebit>0?'good':'bad'},
+  {k:'EBIT-Marge',v:P1(R.marge*100),s:'Ziel 6–8 %',c:hl(R.marge*100,6,0,true)},
+  {k:'Verrechnungsgrad',v:P1(R.verrech*100),s:'Ziel 80–82 %',c:hl(R.verrech*100,80,76,true)},
+  {k:'Umsatz / FTE',v:F(R.umsProFte),s:'CHF',c:hl(R.umsProFte,130000,118000,true)},
+ ];
+ document.getElementById('finKpis').innerHTML=tiles.map(t=>`<div class="kpi k-${t.c}"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
+ // Umsatz nach Kategorie
+ const c=R.revCat;
+ const rev=[['UR',c.UR,'var(--ur)'],['TH',c.TH,'var(--th)'],['SR',c.SR,'var(--sr)'],['GU',c.GU,'var(--gu)'],['Material',c.Material,'var(--mut)'],['Winterdienst',c.Winter,'var(--brand2)']];
+ if(c.Uebrig)rev.push(['Übrige',c.Uebrig,'#8a94a4']);
+ const mx=Math.max(1,...rev.map(r=>r[1]));
+ document.getElementById('revChart').innerHTML=`<svg viewBox="0 0 500 ${rev.length*32+4}" font-family="inherit">`+rev.map((r,i)=>{const y=i*32+4,w=r[1]/mx*300;return `<text x="0" y="${y+15}" font-size="12" fill="var(--ink)">${r[0]}</text><rect x="110" y="${y+3}" width="${Math.max(1,w)}" height="18" rx="3" fill="${r[2]}"/><text x="${110+Math.max(1,w)+6}" y="${y+16}" font-size="11" fill="var(--mut)">${F(r[1])}</text>`;}).join('')+`</svg>`;
+ // Gauge
+ const mg=R.marge*100, gmin=-6,gmax=14, ang=v=>Math.PI-((Math.max(gmin,Math.min(gmax,v))-gmin)/(gmax-gmin))*Math.PI;
+ const cx=150,cy=140,rr=110; const pt=(a,r)=>[cx+r*Math.cos(a),cy-r*Math.sin(a)];
+ function arc(v0,v1,col){const a0=ang(v0),a1=ang(v1);const[x0,y0]=pt(a0,rr),[x1,y1]=pt(a1,rr);const large=(a0-a1)>Math.PI?1:0;return `<path d="M ${x0} ${y0} A ${rr} ${rr} 0 ${large} 1 ${x1} ${y1}" stroke="${col}" stroke-width="16" fill="none"/>`;}
+ const na=ang(mg),[nx,ny]=pt(na,rr-8);
+ document.getElementById('gauge').innerHTML=`<svg viewBox="0 0 300 175" font-family="inherit">${arc(gmin,0,'var(--bad)')}${arc(0,6,'var(--warn)')}${arc(6,gmax,'var(--good)')}<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="3"/><circle cx="${cx}" cy="${cy}" r="5" fill="var(--ink)"/><text x="${cx}" y="${cy-24}" text-anchor="middle" font-size="30" font-weight="750" fill="${mg>=6?'var(--good)':mg>=0?'var(--warn)':'var(--bad)'}">${mg.toFixed(1)}%</text><text x="${cx}" y="${cy+2}" text-anchor="middle" font-size="11" fill="var(--mut)">Zielband 6–8 %</text></svg>`;
+ // Kostenstruktur 100%
+ const items=[['Personal operativ',R.personalOp,'var(--ur)'],['Geschäftsführung',R.personalGF,'var(--th)'],['Verwaltung',R.verw,'#8a94a4'],['Fahrzeuge',R.fahr,'var(--sr)'],['Material',R.mat,'#b0b8c4'],['Winterdienst',R.winterK,'var(--brand2)'],['Abschreibungen',R.abschr,'#6b7686']];
+ if(R.sonst)items.push(['Sonstige',R.sonst,'#9aa4b2']);
+ items.push([R.ebit>=0?'EBIT':'Verlust',Math.abs(R.ebit),R.ebit>=0?'var(--good)':'var(--bad)']);
+ const tot=Math.max(1,items.reduce((a,b)=>a+b[1],0)); let x=0;
+ let bar=`<svg viewBox="0 0 700 46" font-family="inherit"><g>`;
+ items.forEach(it=>{const w=it[1]/tot*700;bar+=`<rect x="${x}" y="6" width="${Math.max(0,w-1)}" height="28" fill="${it[2]}"/>`;if(w>44)bar+=`<text x="${x+w/2}" y="24" text-anchor="middle" font-size="10.5" fill="#fff" font-weight="600">${(it[1]/R.ums*100).toFixed(0)}%</text>`;x+=w;});
+ bar+=`</g></svg>`; document.getElementById('costBar').innerHTML=bar;
+ document.getElementById('costLeg').innerHTML=items.map(it=>`<span><i style="background:${it[2]}"></i>${it[0]} ${F(it[1])} (${(it[1]/R.ums*100).toFixed(1)}%)</span>`).join('');
+ // Wasserfall
+ const wf=[{l:'Umsatz',v:R.ums,type:'start'},{l:'Personal op.',d:-R.personalOp},{l:'Geschäftsf.',d:-R.personalGF},{l:'Fahrzeuge',d:-R.fahr},{l:'Material',d:-R.mat},{l:'Winter',d:-R.winterK},{l:'Verwaltung',d:-R.verw}];
+ if(R.sonst)wf.push({l:'Sonstige',d:-R.sonst});
+ wf.push({l:'Abschreib.',d:-R.abschr},{l:'EBIT',v:R.ebit,type:'end'});
+ let run=R.ums,vals=[R.ums];wf.slice(1,-1).forEach(s=>{run+=s.d;vals.push(run);});vals.push(R.ebit,0);
+ const min=Math.min(...vals),max=Math.max(...vals),W=700,H=230,pb=34,pt2=10,ph=H-pb-pt2,yy=v=>pt2+(max-v)/((max-min)||1)*ph;
+ const n=wf.length,gp=(W-20)/n,bw=Math.min(52,gp*0.62);let h=`<svg viewBox="0 0 ${W} ${H}" font-family="inherit"><line x1="10" y1="${yy(0)}" x2="${W-6}" y2="${yy(0)}" stroke="var(--line)"/>`;let prev=R.ums;
+ wf.forEach((s,i)=>{const cxx=14+i*gp+gp/2;
+  if(s.type){const v=s.v,col=v>=0?(s.type==='start'?'var(--brand)':'var(--good)'):'var(--bad)',y0=yy(Math.max(0,v)),y1=yy(Math.min(0,v));h+=`<rect x="${cxx-bw/2}" y="${y0}" width="${bw}" height="${Math.max(2,y1-y0)}" rx="3" fill="${col}"/><text x="${cxx}" y="${y0-5}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${F(v)}</text>`;prev=v;}
+  else{const to=prev+s.d,yF=yy(prev),yT=yy(to);h+=`<rect x="${cxx-bw/2}" y="${Math.min(yF,yT)}" width="${bw}" height="${Math.max(2,Math.abs(yT-yF))}" rx="3" fill="var(--bad)" opacity="0.78"/><text x="${cxx}" y="${Math.min(yF,yT)-4}" text-anchor="middle" font-size="9.5" fill="var(--mut)">${F(s.d)}</text>`;prev=to;}
+  h+=`<text x="${cxx}" y="${H-6}" text-anchor="middle" font-size="9" fill="var(--mut)">${s.l.length>12?s.l.slice(0,11)+'…':s.l}</text>`;});
+ h+=`</svg>`;document.getElementById('waterfall').innerHTML=h;
+ renderCost(R);
+}
+const COSTBENCH=[['Operatives Personal',r=>r.personalOp,55,62],['Geschäftsführung',r=>r.personalGF,5,8],['Verwaltung/Admin',r=>r.verw,5,8],['Fahrzeuge/Flotte',r=>r.fahr,4,5],['Material (netto)',r=>r.mat,3,4],['Winterdienst',r=>r.winterK,0,2],['Abschreibungen',r=>r.abschr,1,3],['EBIT',r=>r.ebit,6,8]];
+function renderCost(R){
+ const rows=COSTBENCH.map(c=>{const v=c[1](R);const pct=v/R.ums*100;const isE=c[0]==='EBIT';
+  let cls,vd; if(isE){vd=pct<c[2]?'zu tief':'ok';cls=pct<c[2]?'t-lo':'t-ok';}
+  else{const hi=pct>c[3]+.3,lo=pct<c[2]-.3;vd=hi?'zu hoch':(lo?'zu tief':'ok');cls=hi?'t-hi':(lo?'t-mid':'t-ok');}
+  return{n:c[0],v,pct,lo:c[2],hi:c[3],cls,vd,dev:pct-(c[2]+c[3])/2};});
+ const maxP=Math.max(...rows.map(r=>Math.max(r.pct,r.hi)))*1.1;
+ let h=`<svg viewBox="0 0 700 ${rows.length*32+8}" font-family="inherit">`;
+ rows.forEach((r,i)=>{const y=i*32+6,w=x=>x/maxP*460;const col=r.cls==='t-hi'?'var(--bad)':(r.cls==='t-lo'||r.cls==='t-mid'?'var(--warn)':'var(--good)');
+  h+=`<text x="0" y="${y+14}" font-size="12" fill="var(--ink)">${r.n}</text>`;
+  h+=`<rect x="205" y="${y+2}" width="460" height="20" rx="4" fill="var(--soft)"/>`;
+  h+=`<rect x="${205+w(r.lo)}" y="${y+2}" width="${w(r.hi)-w(r.lo)}" height="20" fill="var(--good)" opacity="0.22"/>`;
+  h+=`<rect x="205" y="${y+4}" width="${Math.max(1,w(r.pct))}" height="16" rx="3" fill="${col}"/>`;
+  h+=`<text x="${205+Math.max(1,w(r.pct))+5}" y="${y+16}" font-size="11" fill="var(--mut)">${r.pct.toFixed(1)}%</text>`;});
+ h+=`</svg>`; document.getElementById('costChart').innerHTML=h;
+ let t='<tr><th>Position</th><th class="num">CHF/Jahr</th><th class="num">% Umsatz</th><th class="num">Benchmark</th><th>Urteil</th><th class="num">Δ pp</th></tr>';
+ rows.forEach(r=>{t+=`<tr><td>${r.n}</td><td class="num">${F(r.v)}</td><td class="num">${r.pct.toFixed(1)}%</td><td class="num">${r.lo}–${r.hi}%</td><td><span class="tag ${r.cls}">${r.vd}</span></td><td class="num">${r.dev>0?'+':''}${r.dev.toFixed(1)}</td></tr>`;});
+ document.getElementById('costTable').innerHTML=t;
+}
+
+/* ===== Benchmark ===== */
+const RATES=[['UR Unterhaltsreinigung',60,85,'allpura-Standard, 2026 steigend'],['TH Technischer Hauswart',50,70,'FM/Hauswart Schweiz'],['SR Spezial-/Fensterreinigung',40,70,'Fenster kompetitiv'],['GU Gartenunterhalt',70,100,'Facharbeiter/Kundengärtner ZH']];
+const RKEY=['rateUR','rateTH','rateSR','rateGU'];
+function renderRates(){
+ let t='<tr><th>Kategorie</th><th class="num">dein Satz</th><th class="num">Marktband</th><th>im Band?</th><th>Beleg</th></tr>';
+ RATES.forEach((r,i)=>{const v=M[RKEY[i]];const inb=v>=r[1]&&v<=r[2];const cls=inb?'t-ok':(v<r[1]?'t-lo':'t-hi');
+  t+=`<tr><td>${r[0]}</td><td class="num" style="font-weight:700;color:var(--brand)">${v}.-</td><td class="num">${r[1]}–${r[2]}.-</td><td><span class="tag ${cls}">${inb?'ja':(v<r[1]?'unter Markt':'über Markt')}</span></td><td class="src">${r[3]}</td></tr>`;});
+ document.getElementById('rateTable').innerHTML=t;
+ document.getElementById('rateSrc').innerHTML='Quellen: <a href="https://www.slavi.ch/reinigungsofferte-schweiz-ratgeber-fuer-faire-preise-und-perfekte-qualitaet-2026/" target="_blank" rel="noopener">SLAVI 2026</a> · <a href="https://www.ofri.ch/kosten/unterhaltsreinigung" target="_blank" rel="noopener">ofri</a> · <a href="https://www.ofri.ch/kosten/hauswartung" target="_blank" rel="noopener">ofri Hauswartung</a> · <a href="https://serenagartenbau.ch/preise" target="_blank" rel="noopener">Serena Gartenbau ZH</a>';
+}
+const LEVERS=[['Führung schlank (Vorarbeiter statt Betriebsleiter)','+56k','GF führt operativ mit; keine zweite Führungsebene unter ~25 FTE.'],['Marktgerechte Ansätze + Teuerungsklausel','+114k','Nur bis Marktmittel, Benchmark-belegt.'],['Verrechnungsgrad 76→80 %','+90k','Routing, weniger Leerfahrten, Montags-Rüsten.'],['Wachstum in 73 %-Gebiete','+50–100k','Neue Objekte in Leerkapazität — höchste Grenzmarge.'],['Periodik/SR in lokale Routen','−1 FTE','Keine eigenen Spezial-Crews.'],['Winterdienst als Profitcenter','+40k','Bereitschaft mit eigenem Ansatz.']];
+function renderLevers(){document.getElementById('levers').innerHTML=LEVERS.map(l=>`<div class="measure"><h4>${l[0]} <span class="imp">${l[1]}</span></h4><div class="mm">${l[2]}</div></div>`).join('');
+ document.getElementById('planRules').innerHTML=['Verrechnungsgrad-Ziel <b>80–82 %</b>','Auslastung je Route <b>85–92 %</b>, alle <b>100 % Pensum</b>','Reinigung <b>~180–250 m²/h</b>, Garten <b>~150–220 m²/h</b>','Fahranteil <b>&lt; 8 %</b> der Arbeitszeit','Aufgabenbasierte Taktung + Jahres-Overlay','Periodik in lokale Route (keine Spezial-Crew &lt; 25 FTE)','Frequenzen/Aufwand <b>jährlich validieren</b>'].map(x=>`<li>${x}</li>`).join('');}
+
+/* ===== Szenario ===== */
+const SCENL=[
+ {id:'verrech',label:'Verrechnungsgrad heben auf',unit:'%',def:80,hint:'Weniger Leerfahrten/Rüstzeit — mehr verrechenbare Std aus gleicher Mannschaft.'},
+ {id:'growth',label:'Wachstum: zusätzl. verrechenb. Std/Jahr',unit:'h',def:3000,hint:'Neue Objekte in Leerkapazität (73%-Routen) — nur Materialkosten.'},
+ {id:'price',label:'Preisanpassung auf alle Sätze',unit:'%',def:3,hint:'Weiterer Marktschritt/Teuerung (Marktband beachten).'},
+ {id:'overhead',label:'Verwaltung/Overhead senken um',unit:'CHF',def:20000,hint:'Prozesse, Digitalisierung, Einkauf.'},
+ {id:'winter',label:'Winterdienst-Deckungsbeitrag +',unit:'CHF',def:40000,hint:'Bereitschaft mit eigenem Ansatz.'},
+];
+const SCEN={};SCENL.forEach(l=>SCEN[l.id]={on:false,val:l.def});
+function renderScenLevers(){
+ document.getElementById('scenLevers').innerHTML=SCENL.map(l=>`<div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><label style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;cursor:pointer"><input type="checkbox" data-l="${l.id}" ${SCEN[l.id].on?'checked':''}><span><b>${l.label}</b><br><span class="src">${l.hint}</span></span></label><input type="number" step="any" data-lv="${l.id}" value="${SCEN[l.id].val}" style="width:110px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink);text-align:right"><span class="src" style="width:34px">${l.unit}</span></div>`).join('');
+ document.querySelectorAll('#scenLevers input[data-l]').forEach(el=>el.onchange=()=>{SCEN[el.dataset.l].on=el.checked;saveScen();renderScenario();renderFinToggle();});
+ document.querySelectorAll('#scenLevers input[data-lv]').forEach(el=>el.oninput=()=>{SCEN[el.dataset.lv].val=parseFloat(el.value)||0;saveScen();renderScenario();});
+}
+function scLabel(id){const v=SCEN[id].val;return id==='overhead'?'Overhead −'+F(v):id==='winter'?'Winterdienst +'+F(v):id==='verrech'?'Verrechn. → '+v+'%':id==='growth'?'Wachstum +'+F(v)+' h':'Preis +'+v+'%';}
+function computeScenario(){
+ const istR=compute(M), istE=istR.ebit;
+ const active=SCENL.filter(l=>SCEN[l.id].on);
+ let sc={};SCENL.forEach(l=>sc[l.id]={on:false,val:SCEN[l.id].val});
+ let prevE=istE, steps=[];
+ active.forEach(l=>{sc[l.id].on=true;const e=compute(applyScenario(M,sc)).ebit;steps.push([scLabel(l.id),e-prevE]);prevE=e;});
+ const R=compute(applyScenario(M,SCEN));
+ return{ebit:R.ebit,ums:R.ums,marge:R.marge,steps,istE,istU:istR.ums,istM:istR.marge};
+}
+const TARGET={margeZiel:6};
+function recommend(){
+ const R=compute(M); const targetEBIT=(TARGET.margeZiel/100)*R.ums;
+ SCENL.forEach(l=>SCEN[l.id].on=false);
+ let gap=targetEBIT-R.ebit; const notes=[];
+ const matMarg=R.umsKern>0?R.mat/R.umsKern:(M.materialPct/100), matF=1-matMarg;
+ const blended=R.billH>0?R.umsKern/R.billH:0, soc=1+M.socialPct/100;
+ if(gap<=0){notes.push('Ziel bereits erreicht — aktuelle Marge ≥ Ziel.');renderScenLevers();renderScenario();showRec(notes,R,compute(M));saveScen();return;}
+ // 1 Overhead (max 15% der Verwaltung)
+ const oCap=0.15*R.verw; if(gap>800&&oCap>800){const u=Math.min(oCap,gap);SCEN.overhead.on=true;SCEN.overhead.val=Math.round(u/500)*500;gap-=SCEN.overhead.val;notes.push('Overhead −'+F(SCEN.overhead.val)+' (Prozesse/Einkauf, ~'+Math.round(SCEN.overhead.val/R.verw*100)+'% der Verwaltung).');}
+ // 2 Verrechnungsgrad bis max 82%
+ if(gap>0&&blended>0){const maxExtra=Math.max(0,M.fte*M.paidHProFTE*0.82-R.billH);const maxDelta=maxExtra*blended*matF;
+  if(maxDelta<=gap){if(maxDelta>800){SCEN.verrech.on=true;SCEN.verrech.val=82;gap-=maxDelta;notes.push('Verrechnungsgrad auf 82 % (Leerkapazität füllen, nur Material) → +'+F(maxDelta)+'.');}}
+  else{const needExtra=gap/(blended*matF);const tV=(R.billH+needExtra)/(M.fte*M.paidHProFTE)*100;SCEN.verrech.on=true;SCEN.verrech.val=Math.round(tV*10)/10;notes.push('Verrechnungsgrad auf '+SCEN.verrech.val+' % → +'+F(gap)+'.');gap=0;}}
+ // 3 Winterdienst (max +50k)
+ if(gap>800){const u=Math.min(50000,gap);SCEN.winter.on=true;SCEN.winter.val=Math.round(u/1000)*1000;gap-=SCEN.winter.val;notes.push('Winterdienst-DB +'+F(SCEN.winter.val)+' (eigener Ansatz).');}
+ // 4 Preis bis +3% (Marktband)
+ if(gap>800){const maxP=R.umsKern*0.03;if(maxP<=gap){SCEN.price.on=true;SCEN.price.val=3;gap-=maxP;notes.push('Preis +3 % (im Marktband) → +'+F(maxP)+'.');}else{const p=gap/(R.umsKern||1)*100;SCEN.price.on=true;SCEN.price.val=Math.round(p*10)/10;notes.push('Preis +'+SCEN.price.val+' % (im Marktband) → +'+F(gap)+'.');gap=0;}}
+ // 5 Wachstum fuer Rest
+ if(gap>800&&blended>0){const mph=blended*matF - (M.wageHwMt*M.months*soc)/(M.paidHProFTE*0.80) - (M.fahrzeugProRoute)/(M.paidHProFTE*0.80);
+  if(mph>0){const gh=Math.ceil(gap/mph/100)*100;SCEN.growth.on=true;SCEN.growth.val=gh;notes.push('Wachstum +'+F(gh)+' verrechenb. Std/Jahr in Leerkapazität (Overhead fix, Grenzmarge ~'+F(mph)+'/h).');gap=0;}
+  else notes.push('Rest nicht durch Wachstum schliessbar (Grenzmarge zu tief) — Struktur/Preis prüfen.');}
+ else if(gap>800)notes.push('Restlücke '+F(gap)+' — im Ist-Modus ggf. Kosten direkt senken oder Umsatz erhöhen.');
+ renderScenLevers();renderScenario();renderFinToggle();
+ const Z=compute(applyScenario(M,SCEN));
+ showRec(notes,R,Z); saveScen();
+}
+function showRec(notes,R,Z){document.getElementById('recOut').innerHTML=
+ `<div class="callout" style="margin-bottom:12px"><b>Empfehlung für Ziel-Marge ${TARGET.margeZiel} %:</b><ul class="clean" style="margin-top:6px">${notes.map(n=>`<li>${n}</li>`).join('')}</ul>`+
+ `<div style="margin-top:8px;font-weight:700">→ Ziel-EBIT ${F(Z.ebit)} (${P1(Z.marge*100)}), aus ${F(R.ebit)} (${P1(R.marge*100)}).</div></div>`;}
+function saveScen(){try{localStorage.setItem('maintain_scenario_v1',JSON.stringify({SCEN,TARGET}));}catch(e){}}
+function renderScenario(){
+ const R=compute(M),Z=computeScenario();
+ const mc=hl(Z.marge*100,6,0,true);
+ document.getElementById('scenKpis').innerHTML=[
+  {k:'EBIT Ist',v:(R.ebit>=0?'+':'')+F(R.ebit),s:P1(R.marge*100),c:R.ebit>0?'good':'bad'},
+  {k:'EBIT Ziel',v:(Z.ebit>=0?'+':'')+F(Z.ebit),s:'Marge '+P1(Z.marge*100),c:mc},
+  {k:'Δ EBIT',v:'+'+F(Z.ebit-R.ebit),s:'durch aktive Hebel',c:Z.ebit>R.ebit?'good':'warn'},
+  {k:'Umsatz Ziel',v:F(Z.ums),s:'CHF/Jahr',c:'good'},
+ ].map(t=>`<div class="kpi k-${t.c}">${badge(t.c)}<div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
+ const seq=[{l:'EBIT Ist',v:R.ebit,type:'start'}].concat(Z.steps.map(s=>({l:s[0],d:s[1]}))).concat([{l:'EBIT Ziel',v:Z.ebit,type:'end'}]);
+ const allV=[]; let run=R.ebit; allV.push(R.ebit); Z.steps.forEach(s=>{run+=s[1];allV.push(run);}); allV.push(Z.ebit,0);
+ const min=Math.min(...allV),max=Math.max(...allV),W=700,H=210,pb=30,pt=12,ph=H-pb-pt;
+ const y=v=>pt+(max-v)/((max-min)||1)*ph; const n=seq.length,gp=(W-30)/n,bw=Math.min(66,gp*0.6);
+ let h=`<svg viewBox="0 0 ${W} ${H}" font-family="inherit"><line x1="15" y1="${y(0)}" x2="${W-10}" y2="${y(0)}" stroke="var(--line)"/>`;
+ let prev=R.ebit;
+ seq.forEach((s,i)=>{const cx=20+i*gp+gp/2;
+  if(s.type){const v=s.v,col=v>=0?'var(--good)':'var(--bad)',y0=y(Math.max(0,v)),y1=y(Math.min(0,v));
+   h+=`<rect x="${cx-bw/2}" y="${y0}" width="${bw}" height="${Math.max(2,y1-y0)}" rx="3" fill="${col}"/>`;
+   h+=`<text x="${cx}" y="${v>=0?y0-5:y1+14}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">${v>=0?'+':''}${F(v)}</text>`;prev=v;
+  }else{const from=prev,to=prev+s.d,yF=y(from),yT=y(to),col=s.d>=0?'var(--brand)':'var(--bad)';
+   h+=`<rect x="${cx-bw/2}" y="${Math.min(yF,yT)}" width="${bw}" height="${Math.max(2,Math.abs(yT-yF))}" rx="3" fill="${col}" opacity="0.9"/>`;
+   h+=`<text x="${cx}" y="${Math.min(yF,yT)-5}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${s.d>=0?'var(--brand)':'var(--bad)'}">${s.d>=0?'+':''}${F(s.d)}</text>`;prev=to;}
+  h+=`<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="var(--mut)">${s.l.length>18?s.l.slice(0,17)+'…':s.l}</text>`;});
+ h+=`</svg>`;
+ document.getElementById('scenBridge').innerHTML= Z.steps.length? h : '<div class="src" style="padding:12px 0">Aktiviere oben Hebel (oder „⚡ Empfehlung generieren"), um das Ziel-Szenario zu sehen.</div>';
+}
+
+/* ===== Render-Orchestrierung ===== */
+function renderAll(){const R=compute(M);renderSummary(R);renderPL(R);renderFinanzen();renderRates();renderScenario();renderFinToggle();}
+
+/* ===== Tourenplanung ===== */
+let planLoaded=false;
+function loadFrame(){const f=document.getElementById('planFrame');if(!f.getAttribute('src'))f.setAttribute('src','WSG_Einsatzplan_v2.html');planLoaded=true;}
+function renderPlanKpis(){
+ const R=compute(M);
+ const tiles=[{k:'Routen / Fahrzeuge',v:Math.round(M.routen)},{k:'FTE operativ',v:Math.round(M.fte*10)/10},{k:'Verrechenb. Std/Jahr',v:F(R.billH)},{k:'Verrechnungsgrad',v:P1(R.verrech*100)}];
+ document.getElementById('planKpis').innerHTML=tiles.map(t=>`<div class="kpi"><div class="k">${t.k}</div><div class="v">${t.v}</div></div>`).join('');
+}
+
+/* ===== Tourenplanung-Verknüpfung / Upload ===== */
+async function loadPlan(silent){
+ try{ const k=await (await fetch('_kennzahlen_v2.json',{cache:'no-store'})).json();
+  M.src='plan';
+  M.hoursUR=k.kategorienH.UR;M.hoursTH=k.kategorienH.TH;M.hoursSR=k.kategorienH.SR;M.hoursGU=k.kategorienH.GU;
+  M.fte=k.fteTotal;M.routen=k.routen;M.nHauswarte=Math.max(0,k.routen-M.nVorarbeiter);
+  M.rateUR=k.ansaetze.UR;M.rateTH=k.ansaetze.TH;M.rateSR=k.ansaetze.SR;M.rateGU=k.ansaetze.GU;
+  save();renderInputs();renderAll();renderPlanKpis();
+  document.getElementById('status').textContent='✓ Ist-Werte aus Tourenplanung geladen ('+k.objekte+' Objekte, '+k.routen+' Routen). Synchron mit dem Einsatzplan.';
+ }catch(e){ if(!silent) document.getElementById('status').textContent='⚠ Tourenplanung nicht erreichbar — Datei per lokalem Server öffnen (serve_v2.ps1), damit _kennzahlen_v2.json geladen werden kann. Es gelten die gespeicherten Werte.'; }
+}
+function freqToVisits(s){s=(s||'').toString().toLowerCase();if(/t(ä|ae)glich/.test(s)&&!/14/.test(s))return 260;if(/3\s*x/.test(s))return 156;if(/2\s*x/.test(s))return 104;if(/14|zweiw|alle 2/.test(s))return 26;if(/w(ö|oe)ch|1\s*x/.test(s))return 52;if(/monat/.test(s))return 12;if(/quart/.test(s))return 4;if(/halbj/.test(s))return 2;if(/j(ä|ae)hrlich/.test(s))return 1;const n=parseFloat(s);return(!isNaN(n)&&n>0&&n<=365)?n:52;}
+function parseList(txt){txt=txt.replace(/\r/g,'');const L=txt.split('\n').filter(l=>l.trim());if(!L.length)return null;const d=(L[0].split(';').length>L[0].split(',').length)?';':',';const H=L[0].split(d).map(h=>h.replace(/^"|"$/g,'').trim().toLowerCase());const ix=(...k)=>{for(const kk of k){const i=H.findIndex(h=>h.includes(kk));if(i>=0)return i;}return -1;};
+ const c={m2:ix('flaeche innen','fläche innen','flaeche','fläche','m2','m²','innen'),g:ix('garten'),f:ix('frequenz','takt'),min:ix('minuten/monat'),am:ix('aufwand min'),as:ix('aufwand std','aufwand h'),ga:ix('garage','ausstattung')};
+ const nu=s=>{s=(s||'').toString().replace(/['’]/g,'').replace(',','.').replace(/[^0-9.\-]/g,'');const n=parseFloat(s);return isNaN(n)?0:n;};
+ let ur=0,gu=0,th=0,sr=0,n=0;
+ for(let i=1;i<L.length;i++){const r=L[i].split(d).map(x=>x.replace(/^"|"$/g,''));const m2=c.m2>=0?nu(r[c.m2]):0;const gm=c.g>=0?nu(r[c.g]):0;const V=freqToVisits(c.f>=0?r[c.f]:'');const expl=c.min>=0?nu(r[c.min])*12:(c.am>=0?nu(r[c.am])*12:(c.as>=0?nu(r[c.as])*12*60:0));if(m2===0&&expl===0)continue;n++;
+  if(expl>0){const gs=gm>0?Math.min(0.4,gm/(m2+gm+1)):0;ur+=expl*(1-gs)/60;gu+=expl*gs/60;}else{ur+=(m2/210)*V;gu+=gm>0?(gm/180)*Math.min(V,26):0;th+=(22/60)*V;sr+=(m2*1.0)/60+((c.ga>=0&&/garage/i.test(r[c.ga]||''))?11:0);}}
+ return{ur,gu,th,sr,n};
+}
+function handleFile(f){const rd=new FileReader();rd.onload=()=>{const e=parseList(rd.result);if(!e||e.n===0){document.getElementById('status').textContent='⚠ Keine verwertbaren Zeilen in der Liste.';return;}
+ M.src='plan';
+ M.hoursUR=Math.round(e.ur);M.hoursTH=Math.round(e.th);M.hoursSR=Math.round(e.sr);M.hoursGU=Math.round(e.gu);
+ const billH=e.ur+e.th+e.sr+e.gu;M.fte=Math.round(billH/M.verrechHProFTE*10)/10;M.routen=Math.max(1,Math.ceil(M.fte));M.nHauswarte=Math.max(0,M.routen-M.nVorarbeiter);
+ save();renderInputs();renderAll();renderPlanKpis();document.getElementById('status').textContent='✓ '+e.n+' Objekte aus Liste geschätzt → '+F(billH)+' Std/Jahr, '+M.fte+' FTE, '+M.routen+' Routen. (Schätzung — Parameter unter „Eingaben → Kapazität" anpassbar.)';};rd.readAsText(f,'utf-8');}
+
+/* ===== Tabs ===== */
+function switchTab(name){
+ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+ document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name));
+ if(name==='planung'){loadFrame();renderPlanKpis();}
+ if(name==='finanzen')renderFinanzen();
+ location.hash=name;
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+
+/* ===== Events ===== */
+document.querySelectorAll('#srcSeg button').forEach(b=>b.onclick=()=>{M.src=b.dataset.src;save();renderInputs();renderAll();});
+document.querySelectorAll('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;renderFinanzen();});
+document.getElementById('loadPlan').onclick=()=>loadPlan(false);
+document.getElementById('reloadPlan').onclick=()=>{const f=document.getElementById('planFrame');f.setAttribute('src','WSG_Einsatzplan_v2.html?'+Date.now());};
+document.getElementById('uploadBtn').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
+document.getElementById('resetBtn').onclick=()=>{if(!confirm('Alle Eingaben auf die Standard-/Ist-Werte zurücksetzen?'))return;M=Object.assign({},DEF);save();renderInputs();renderAll();renderPlanKpis();document.getElementById('status').textContent='↺ Zurückgesetzt.';};
+document.getElementById('exportBtn').onclick=()=>{const R=compute(M);const out={datenquelle:M.src,eingaben:M,ergebnis:{umsatz:Math.round(R.ums),ebitda:Math.round(R.ebitda),ebit:Math.round(R.ebit),marge:+(R.marge*100).toFixed(2),verrechnungsgrad:+(R.verrech*100).toFixed(1)},stand:new Date().toISOString()};const b=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='Maintain_Kennzahlen.json';a.click();URL.revokeObjectURL(a.href);};
+document.getElementById('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':(c==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark')));};
+document.getElementById('foot').innerHTML='Maintain GmbH · Management-Cockpit (All-in-One) · Ist-Zahlen + Finanz-Dashboard + Tourenplanung · Eingaben lokal gespeichert (localStorage) · Benchmarks Schweizer Markt Juli 2026 · erstellt mit Claude.';
+
+/* ===== Init ===== */
+try{const sv=JSON.parse(localStorage.getItem('maintain_scenario_v1')||'null');if(sv){if(sv.SCEN)SCENL.forEach(l=>{if(sv.SCEN[l.id])SCEN[l.id]=Object.assign({},SCEN[l.id],sv.SCEN[l.id]);});if(sv.TARGET)Object.assign(TARGET,sv.TARGET);}}catch(e){}
+renderInputs();renderLevers();renderScenLevers();renderAll();renderPlanKpis();
+document.getElementById('targetMarge').value=TARGET.margeZiel;
+document.getElementById('targetMarge').oninput=e=>{TARGET.margeZiel=parseFloat(e.target.value)||0;saveScen();};
+document.getElementById('recBtn').onclick=recommend;
+document.getElementById('clearScen').onclick=()=>{SCENL.forEach(l=>SCEN[l.id].on=false);document.getElementById('recOut').innerHTML='';saveScen();renderScenLevers();renderScenario();renderFinToggle();};
+document.getElementById('status').textContent='Bereit. Datenquelle im Tab „Eingaben" wählen (Ist-Zahlen oder Kalkuliert).';
+if(location.hash&&document.querySelector('.tab[data-tab="'+location.hash.slice(1)+'"]'))switchTab(location.hash.slice(1));
+loadPlan(true);
+</script>
+</body>
+</html>
