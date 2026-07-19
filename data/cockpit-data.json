@@ -1,0 +1,81 @@
+{
+ "schema": "maintain-cockpit/1",
+ "model": {
+  "src": "plan",
+  "hoursUR": 17007,
+  "hoursTH": 2278,
+  "hoursSR": 938,
+  "hoursGU": 1308,
+  "fte": 13,
+  "routen": 13,
+  "verrechHProFTE": 1656,
+  "paidHProFTE": 2184,
+  "rateUR": 70,
+  "rateTH": 68,
+  "rateSR": 66,
+  "rateGU": 88,
+  "nHauswarte": 12,
+  "wageHwMt": 5300,
+  "nVorarbeiter": 1,
+  "wageVAMt": 6200,
+  "wageGF": 140000,
+  "months": 13,
+  "socialPct": 18,
+  "fahrzeugProRoute": 8000,
+  "materialPct": 4,
+  "materialAufschlag": 15,
+  "winterUms": 60000,
+  "winterK": 20000,
+  "abschreibung": 25000,
+  "verwMiete": 30000,
+  "verwBackoffice": 32214,
+  "verwTreuhand": 14000,
+  "verwVers": 9000,
+  "verwIT": 16000,
+  "verwMkt": 12000,
+  "verwDiv": 9000,
+  "istUR": 0,
+  "istTH": 0,
+  "istSR": 0,
+  "istGU": 0,
+  "istMat": 0,
+  "istWinterUms": 0,
+  "istUebrigUms": 0,
+  "istPersonalOp": 0,
+  "istPersonalGF": 0,
+  "istFahr": 0,
+  "istMatK": 0,
+  "istWinterK": 0,
+  "istVerw": 0,
+  "istAbschr": 0,
+  "istSonstK": 0
+ },
+ "scenario": {
+  "SCEN": {
+   "verrech": {
+    "on": false,
+    "val": 80
+   },
+   "growth": {
+    "on": false,
+    "val": 3000
+   },
+   "price": {
+    "on": false,
+    "val": 3
+   },
+   "overhead": {
+    "on": false,
+    "val": 20000
+   },
+   "winter": {
+    "on": false,
+    "val": 40000
+   }
+  },
+  "TARGET": {
+   "margeZiel": 6
+  }
+ },
+ "savedAt": "2026-07-19T19:42:16.836Z"
+}
