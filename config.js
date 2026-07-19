@@ -19,8 +19,8 @@ window.MAINTAIN_CONFIG = {
     owner:  "MailHuegli",
     repo:   "Management-Tool",
     branch: "main",
-    dataPath:      "data/cockpit-data.json",   // hier speichert das Tool deine Zahlen
-    kennzahlenPath:"_kennzahlen_v2.json",       // Planungs-Kennzahlen (privat)
-    einsatzplanPath:"WSG_Einsatzplan_v2.html"   // Tourenplan (privat) für den Planungs-Tab
+    dataPath:      "data/cockpit-data.json",     // hier speichert das Tool deine Zahlen
+    kennzahlenPath:"_kennzahlen_v2.json",         // Planungs-Kennzahlen (privat)
+    einsatzplanPath:"WSG_Touren_Dashboard.html"   // interaktiver Touren-Editor (privat) für den Planungs-Tab
   }
 };
