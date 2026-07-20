@@ -206,9 +206,12 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 <!-- BENCHMARK -->
 <section class="tabpane" data-pane="benchmark">
   <h2 class="sec">Best-Practice-Preise (Benchmark CH)</h2>
-  <div class="lead">Referenz für die Kostensätze</div>
+  <div class="lead">Deine Stundensätze (aus „Eingaben") vs. Marktband</div>
   <div class="card"><table id="rateTable"></table></div>
   <div class="src" style="margin-top:8px" id="rateSrc"></div>
+  <h2 class="sec" style="margin-top:24px">Leistungskatalog — enthaltene Arbeiten je Bündel</h2>
+  <div class="lead">Referenz aus deinem Facility-Leistungskatalog</div>
+  <div class="card"><div id="katRef"></div></div>
   <h2 class="sec" style="margin-top:24px">Hebel & Planungs-Zielwerte</h2>
   <div class="grid2">
     <div class="card"><h3>Hebel zur EBIT-Verbesserung</h3><div id="levers"></div></div>
@@ -254,6 +257,7 @@ const DEF={
  /* Planungs-/Kalkulationsbasis */
  hoursUR:17007,hoursTH:2278,hoursSR:938,hoursGU:1308,fte:13,routen:13,verrechHProFTE:1656,paidHProFTE:2184,
  rateUR:70,rateTH:68,rateSR:66,rateGU:88,
+ katUnterhalt:65,katGrund:75,katTechnik:90,katBrand:95,katGarten:80,katWinter:95,katHauswart:70,katObjekt:95,
  nHauswarte:12,wageHwMt:5300,nVorarbeiter:1,wageVAMt:6200,wageGF:140000,months:13,socialPct:18,
  fahrzeugProRoute:8000,materialPct:4,materialAufschlag:15,winterUms:60000,winterK:20000,abschreibung:25000,
  verwMiete:30000,verwBackoffice:32214,verwTreuhand:14000,verwVers:9000,verwIT:16000,verwMkt:12000,verwDiv:9000,
@@ -273,7 +277,7 @@ const GROUPS_IST=[
 ];
 const GROUPS_PLAN=[
  {title:'Basis · Leistung (aus Tourenplanung oder Liste)',fields:[['hoursUR','UR Std/Jahr'],['hoursTH','TH Std/Jahr'],['hoursSR','SR Std/Jahr'],['hoursGU','GU Std/Jahr'],['fte','FTE operativ'],['routen','Routen / Fahrzeuge'],['verrechHProFTE','verrechenb. Std/FTE·J'],['paidHProFTE','bezahlte Std/FTE·J']]},
- {title:'Kostensätze exkl. MwSt. (CHF/h)',accent:true,fields:[['rateUR','UR Unterhaltsreinigung'],['rateTH','TH Techn. Hauswart'],['rateSR','SR Spezialreinigung'],['rateGU','GU Gartenunterhalt']]},
+ {title:'Leistungskatalog — Stundensätze exkl. MwSt. (CHF/h)',accent:true,fields:[['katUnterhalt','Unterhaltsreinigung (Markt 55–85)'],['katGrund','Zwischen-/Grundreinigung (70–95)'],['katTechnik','Techn. Rundgang/Haustechnik (70–120)'],['katBrand','Brandschutz/Sicherheit (85–130)'],['katGarten','Gartenunterhalt/Umgebung (60–95)'],['katWinter','Winterdienst (80–120)'],['katHauswart','Hauswart-Service/Kleinunterhalt (50–80)'],['katObjekt','Objektmanagement/Reporting (85–120)']]},
  {title:'Löhne & Struktur',fields:[['nHauswarte','Anzahl Hauswarte'],['wageHwMt','Hauswart Lohn/Mt'],['nVorarbeiter','Anzahl Vorarbeiter'],['wageVAMt','Vorarbeiter Lohn/Mt'],['wageGF','GF Lohn/Jahr'],['months','Monatslöhne (13.)'],['socialPct','Lohnnebenkosten %']]},
  {title:'Betriebskosten',fields:[['fahrzeugProRoute','Fahrzeug CHF/Jahr'],['materialPct','Material % vom Umsatz'],['materialAufschlag','Material-Aufschlag %'],['winterUms','Winterdienst Umsatz'],['winterK','Winterdienst Kosten'],['abschreibung','Abschreibungen']]},
  {title:'Verwaltung / Overhead',fields:[['verwMiete','Büro & Magazin Miete'],['verwBackoffice','Backoffice (Lohn+NK)'],['verwTreuhand','Treuhand/Buchhaltung'],['verwVers','Versicherungen'],['verwIT','IT/Software/Telekom'],['verwMkt','Marketing/Akquise'],['verwDiv','Büromaterial/Diverses']]},
@@ -300,7 +304,7 @@ function base(m){
   ums=umsKern+matAuf+winterUms+uebrig;
   personalOp=m.istPersonalOp; personalGF=m.istPersonalGF; fahr=m.istFahr; mat=m.istMatK; winterK=m.istWinterK; verw=m.istVerw; abschr=m.istAbschr; sonst=m.istSonstK;
  } else {
-  const rUR=m.hoursUR*m.rateUR,rTH=m.hoursTH*m.rateTH,rSR=m.hoursSR*m.rateSR,rGU=m.hoursGU*m.rateGU;
+  const rUR=m.hoursUR*(m.katUnterhalt||m.rateUR),rTH=m.hoursTH*(m.katTechnik||m.rateTH),rSR=m.hoursSR*(m.katGrund||m.rateSR),rGU=m.hoursGU*(m.katGarten||m.rateGU);
   umsKern=rUR+rTH+rSR+rGU; mat=umsKern*m.materialPct/100; matAuf=mat*m.materialAufschlag/100; winterUms=m.winterUms; uebrig=0;
   revCat={UR:rUR,TH:rTH,SR:rSR,GU:rGU,Material:matAuf,Winter:winterUms,Uebrig:0};
   ums=umsKern+matAuf+winterUms;
@@ -330,7 +334,7 @@ function applyScenario(M0,sc){const m=Object.assign({},M0);
   if(m.src==='ist'){m.istUebrigUms+=rev;m.istMatK+=rev*matMarg;m.istPersonalOp+=nF*m.wageHwMt*m.months*soc;m.istFahr+=nF*m.fahrzeugProRoute;}
   else{const b1=m.hoursUR+m.hoursTH+m.hoursSR+m.hoursGU;if(b1>0){const f=(b1+sc.growth.val)/b1;m.hoursUR*=f;m.hoursTH*=f;m.hoursSR*=f;m.hoursGU*=f;}m.nHauswarte+=nF;m.routen+=nF;}
   m.fte+=nF;}
- if(sc.price&&sc.price.on){const p=1+sc.price.val/100; if(m.src==='ist'){m.istUR*=p;m.istTH*=p;m.istSR*=p;m.istGU*=p;} else {m.rateUR*=p;m.rateTH*=p;m.rateSR*=p;m.rateGU*=p;}}
+ if(sc.price&&sc.price.on){const p=1+sc.price.val/100; if(m.src==='ist'){m.istUR*=p;m.istTH*=p;m.istSR*=p;m.istGU*=p;} else {m.katUnterhalt*=p;m.katTechnik*=p;m.katGrund*=p;m.katGarten*=p;}}
  if(sc.overhead&&sc.overhead.on){ if(m.src==='ist'){m.istVerw=Math.max(0,m.istVerw-sc.overhead.val);} else {const vw=m.verwMiete+m.verwBackoffice+m.verwTreuhand+m.verwVers+m.verwIT+m.verwMkt+m.verwDiv;const f=Math.max(0,(vw-sc.overhead.val)/(vw||1));['verwMiete','verwBackoffice','verwTreuhand','verwVers','verwIT','verwMkt','verwDiv'].forEach(k=>m[k]*=f);}}
  if(sc.winter&&sc.winter.on){ if(m.src==='ist'){m.istWinterUms+=sc.winter.val;} else {m.winterUms+=sc.winter.val;}}
  return m;
@@ -457,8 +461,21 @@ function renderCost(R){
 }
 
 /* ===== Benchmark ===== */
-const RATES=[['UR Unterhaltsreinigung',60,85,'allpura-Standard, 2026 steigend'],['TH Technischer Hauswart',50,70,'FM/Hauswart Schweiz'],['SR Spezial-/Fensterreinigung',40,70,'Fenster kompetitiv'],['GU Gartenunterhalt',70,100,'Facharbeiter/Kundengärtner ZH']];
-const RKEY=['rateUR','rateTH','rateSR','rateGU'];
+const KATALOG={bundles:[
+ {id:'katUnterhalt',name:'Unterhaltsreinigung',rate:65,color:'#13877a',works:['Treppenhaus/Korridore wischen','Eingang/Windfang/Matten','Lift reinigen','Handläufe/Griffe/Schalter','Briefkasten/Klingel','Waschküche/Trockenraum','Abfallraum/Container','Vorplatz/Zugänge kehren','Kellergänge/Veloraum','Glasflächen Eingang','Einstellhalle/TG kehren']},
+ {id:'katGrund',name:'Zwischen-/Grundreinigung',rate:75,color:'#1f9ec9',works:['Fenster innen/aussen inkl. Rahmen','Bodenbeläge Grundreinigung','Storen/Lamellen/Rollläden','Beleuchtung/Leuchten','Waschküche entkalken','Tiefgarage Grundreinigung','Sockelleisten/Heizkörper/Türen']},
+ {id:'katTechnik',name:'Technischer Rundgang / Haustechnik',rate:90,color:'#e0912c',works:['Technischer Rundgang','Heizung','Lüftung','Sanitär/Boiler','Elektro/FI-Test','Entwässerung/Dachrinnen','Lift-Test','Dach/Estrich/Keller','Koordination Fachwartungen']},
+ {id:'katBrand',name:'Brandschutz / Sicherheit',rate:95,color:'#d6453d',works:['Feuerlöscher/Rauchmelder','Fluchtwege/Notausgänge','Notbeleuchtung','Brandschutztüren','Schliessanlage/Zutritt','Sicherheitsbeleuchtung','Prüfjournal Brandschutz']},
+ {id:'katGarten',name:'Gartenunterhalt / Umgebung',rate:80,color:'#3f9d4f',works:['Rasen mähen','Rasenkanten','Beete/Wege jäten','Hecken/Sträucher','Bewässerung','Laubentfernung','Frühjahr Rückschnitt','Baumpflege']},
+ {id:'katWinter',name:'Winterdienst',rate:95,color:'#2f74c0',works:['Schneeräumung','Streuen/Salzen','Handräumung Treppen','Streugut nachfüllen','Eiszapfen/Dachlawinen']},
+ {id:'katHauswart',name:'Hauswart-Service / Kleinunterhalt',rate:70,color:'#9c6b3a',works:['Kleinreparaturen','Ver-/Entsorgung Container','Sperrgut/Grüngut','Namensschilder','Ungeziefer','Störungsannahme']},
+ {id:'katObjekt',name:'Objektmanagement / Reporting',rate:95,color:'#8659c5',works:['Objekt-Journal','Reporting Verwaltung','Mängelmeldung/Offert','Jahresbegehung']}
+]};
+function renderKatRef(){const el=document.getElementById('katRef');if(!el)return;
+ el.innerHTML=KATALOG.bundles.map(b=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;align-items:center;gap:8px"><i style="width:12px;height:12px;border-radius:3px;background:${b.color};display:inline-block"></i><b>${b.name}</b> <span class="src">${(M['kat'+b.id.slice(3)]!=null?M['kat'+b.id.slice(3)]:b.rate)}.-/h</span></div><div class="src" style="margin-top:3px">${b.works.join(' · ')}</div></div>`).join('');
+}
+const RATES=[['Unterhaltsreinigung',55,85,'allpura-Standard'],['Zwischen-/Grundreinigung',70,95,'Grund-/Fensterreinigung'],['Technischer Rundgang / Haustechnik',70,120,'FM/Haustechnik'],['Brandschutz / Sicherheit',85,130,'periodische Kontrollen'],['Gartenunterhalt / Umgebung',60,95,'Kundengärtner ZH'],['Winterdienst',80,120,'Pikett/Einsatz'],['Hauswart-Service / Kleinunterhalt',50,80,'Hauswartung'],['Objektmanagement / Reporting',85,120,'Verwaltung/Reporting']];
+const RKEY=['katUnterhalt','katGrund','katTechnik','katBrand','katGarten','katWinter','katHauswart','katObjekt'];
 function renderRates(){
  let t='<tr><th>Kategorie</th><th class="num">dein Satz</th><th class="num">Marktband</th><th>im Band?</th><th>Beleg</th></tr>';
  RATES.forEach((r,i)=>{const v=M[RKEY[i]];const inb=v>=r[1]&&v<=r[2];const cls=inb?'t-ok':(v<r[1]?'t-lo':'t-hi');
@@ -553,7 +570,7 @@ function renderScenario(){
 }
 
 /* ===== Render-Orchestrierung ===== */
-function renderAll(){const R=compute(M);renderSummary(R);renderPL(R);renderFinanzen();renderRates();renderScenario();renderFinToggle();}
+function renderAll(){const R=compute(M);renderSummary(R);renderPL(R);renderFinanzen();renderRates();renderKatRef();renderScenario();renderFinToggle();}
 
 /* ===== GitHub-Sync ===== */
 const GHLS='maintain_github';
