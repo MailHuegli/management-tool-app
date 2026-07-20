@@ -162,6 +162,13 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
     <span class="src" id="finScenNote"></span>
   </div>
   <div class="kpis" id="finKpis" style="margin-bottom:16px"></div>
+  <div class="card" id="monCard">
+    <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Monatszahlen — Umsatz · Kosten · Ergebnis
+      <button class="btn" id="monUpBtn" style="border-color:var(--line);background:var(--soft);color:var(--ink);font-size:12px;padding:5px 10px">⬆ Monats-Excel hochladen</button>
+      <button class="btn" id="monGhBtn" style="border-color:var(--line);background:var(--soft);color:var(--ink);font-size:12px;padding:5px 10px">☁ Ins private Repo speichern</button>
+    </h3>
+    <div id="monBody"></div>
+  </div>
   <div class="grid2">
     <div class="card"><h3>Umsatz nach Kategorie</h3><div id="revChart"></div></div>
     <div class="card"><h3>EBIT-Marge vs. Ziel</h3><div id="gauge"></div></div>
@@ -192,7 +199,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 <!-- PLANUNG -->
 <section class="tabpane" data-pane="planung">
   <h2 class="sec">Tourenplanung</h2>
-  <div class="lead">Jede Tour im Detail · 52 Wochen · beschriftete Kalendereinträge · Auslastungs-Übersicht</div>
+  <div class="lead">Jede Tour im Detail · 52 Wochen · alles direkt anpassbar: Objekte, Arbeiten, Frequenzen, Kapazität &amp; Arbeitszeiten</div>
   <div class="kpis" id="planKpis" style="margin-bottom:14px"></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <button class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" id="planLoadBtn">⟳ Laden</button>
@@ -200,7 +207,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
   </div>
   <div id="planMsg" class="callout" style="display:none"></div>
   <iframe class="plan" id="planFrame" title="Einsatzplan" loading="lazy" style="display:none"></iframe>
-  <div class="src" style="margin-top:8px">Der Editor liegt in deinem privaten Repo und wird nach der GitHub-Verbindung hier geladen. „☁ In GitHub speichern" (im Editor) schreibt deine Touren-Zuordnungen ins private Repo — geräteübergreifend.</div>
+  <div class="src" style="margin-top:8px">Der Planer liegt in deinem privaten Repo und wird nach der GitHub-Verbindung hier geladen. Darin kannst du alles anpassen: Objekte verschieben oder neu anlegen, Arbeiten mit Minuten &amp; Frequenz ändern oder aus dem Katalog hinzufügen, Wochentag je Objekt, Wochenkapazität und Arbeitszeiten. „☁ In GitHub speichern" sichert alle Anpassungen geräteübergreifend; „→ Kennzahlen ins Cockpit" überträgt die Stunden hierher (dann oben „⟳ Aus Tourenplanung laden").</div>
 </section>
 
 <!-- BENCHMARK -->
@@ -264,19 +271,21 @@ const DEF={
  /* Ist-Zahlen (effektiv) — Umsatz nach Kategorie */
  istUR:0,istTH:0,istSR:0,istGU:0,istMat:0,istWinterUms:0,istUebrigUms:0,
  /* Ist-Zahlen — Kosten */
- istPersonalOp:0,istPersonalGF:0,istFahr:0,istMatK:0,istWinterK:0,istVerw:0,istAbschr:0,istSonstK:0
+ istPersonalOp:0,istPersonalGF:0,istFahr:0,istMatK:0,istWinterK:0,istVerw:0,istAbschr:0,istSonstK:0,
+ /* Monatszahlen (aus Vorlage_Monatszahlen_Import.xlsx) */
+ monate:[]
 };
 let M=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s)M=Object.assign({},DEF,s);}catch(e){}
 
 /* ===== Eingabegruppen je Datenquelle ===== */
 const GROUPS_IST=[
- {title:'① Ist-Umsatz nach Kategorie (CHF/Jahr, exkl. MwSt.)',accent:true,fields:[['istUR','UR Unterhaltsreinigung'],['istTH','TH Techn. Hauswart'],['istSR','SR Spezialreinigung'],['istGU','GU Gartenunterhalt'],['istMat','Material weiterverrechnet'],['istWinterUms','Winterdienst'],['istUebrigUms','Übriger Umsatz']]},
- {title:'② Ist-Kosten (CHF/Jahr)',accent:true,fields:[['istPersonalOp','Personal operativ (inkl. NK)'],['istPersonalGF','Geschäftsführung (inkl. NK)'],['istFahr','Fahrzeuge / Flotte'],['istMatK','Materialaufwand'],['istWinterK','Winterdienst-Kosten'],['istVerw','Verwaltung / Overhead total'],['istAbschr','Abschreibungen'],['istSonstK','Sonstige Kosten']]},
- {title:'③ Kapazität (für Verrechnungsgrad & Umsatz/FTE)',fields:[['fte','FTE operativ'],['routen','Routen / Fahrzeuge'],['hoursUR','verrechenb. Std UR'],['hoursTH','verrechenb. Std TH'],['hoursSR','verrechenb. Std SR'],['hoursGU','verrechenb. Std GU'],['paidHProFTE','bezahlte Std/FTE·J']]},
+ {title:'① Ist-Umsatz nach Kategorie (CHF/Jahr, exkl. MwSt.)',accent:true,fields:[['istUR','Unterhaltsreinigung'],['istTH','Techn. Hauswart / Haustechnik'],['istSR','Grund-/Spezialreinigung'],['istGU','Gartenunterhalt'],['istMat','Material weiterverrechnet'],['istWinterUms','Winterdienst'],['istUebrigUms','Übriger Umsatz']]},
+ {title:'② Ist-Kosten (CHF/Jahr)',accent:true,fields:[['istPersonalOp','Personal operativ (inkl. Sozialkosten)'],['istPersonalGF','Geschäftsführung (inkl. Sozialkosten)'],['istFahr','Fahrzeuge / Flotte'],['istMatK','Materialaufwand'],['istWinterK','Winterdienst-Kosten'],['istVerw','Verwaltung / Overhead total'],['istAbschr','Abschreibungen'],['istSonstK','Sonstige Kosten']]},
+ {title:'③ Kapazität (für Verrechnungsgrad & Umsatz je Mitarbeiter)',fields:[['fte','Mitarbeitende operativ (Vollzeit)'],['routen','Routen / Fahrzeuge'],['hoursUR','Verrechenb. Std · Unterhaltsreinigung'],['hoursTH','Verrechenb. Std · Techn. Hauswart'],['hoursSR','Verrechenb. Std · Grund-/Spezialreinigung'],['hoursGU','Verrechenb. Std · Gartenunterhalt'],['paidHProFTE','Bezahlte Std/Jahr je Mitarbeiter']]},
 ];
 const GROUPS_PLAN=[
- {title:'Basis · Leistung (aus Tourenplanung oder Liste)',fields:[['hoursUR','UR Std/Jahr'],['hoursTH','TH Std/Jahr'],['hoursSR','SR Std/Jahr'],['hoursGU','GU Std/Jahr'],['fte','FTE operativ'],['routen','Routen / Fahrzeuge'],['verrechHProFTE','verrechenb. Std/FTE·J'],['paidHProFTE','bezahlte Std/FTE·J']]},
+ {title:'Basis · Leistung (aus Tourenplanung oder Liste)',fields:[['hoursUR','Unterhaltsreinigung Std/Jahr'],['hoursTH','Techn. Hauswart Std/Jahr'],['hoursSR','Grund-/Spezialreinigung Std/Jahr'],['hoursGU','Gartenunterhalt Std/Jahr'],['fte','Mitarbeitende operativ (Vollzeit)'],['routen','Routen / Fahrzeuge'],['verrechHProFTE','Verrechenb. Std/Jahr je Mitarbeiter'],['paidHProFTE','Bezahlte Std/Jahr je Mitarbeiter']]},
  {title:'Leistungskatalog — Stundensätze exkl. MwSt. (CHF/h)',accent:true,fields:[['katUnterhalt','Unterhaltsreinigung (Markt 55–85)'],['katGrund','Zwischen-/Grundreinigung (70–95)'],['katTechnik','Techn. Rundgang/Haustechnik (70–120)'],['katBrand','Brandschutz/Sicherheit (85–130)'],['katGarten','Gartenunterhalt/Umgebung (60–95)'],['katWinter','Winterdienst (80–120)'],['katHauswart','Hauswart-Service/Kleinunterhalt (50–80)'],['katObjekt','Objektmanagement/Reporting (85–120)']]},
  {title:'Löhne & Struktur',fields:[['nHauswarte','Anzahl Hauswarte'],['wageHwMt','Hauswart Lohn/Mt'],['nVorarbeiter','Anzahl Vorarbeiter'],['wageVAMt','Vorarbeiter Lohn/Mt'],['wageGF','GF Lohn/Jahr'],['months','Monatslöhne (13.)'],['socialPct','Lohnnebenkosten %']]},
  {title:'Betriebskosten',fields:[['fahrzeugProRoute','Fahrzeug CHF/Jahr'],['materialPct','Material % vom Umsatz'],['materialAufschlag','Material-Aufschlag %'],['winterUms','Winterdienst Umsatz'],['winterK','Winterdienst Kosten'],['abschreibung','Abschreibungen']]},
@@ -289,7 +298,7 @@ function renderInputs(){
  document.getElementById('inpLead').textContent = M.src==='ist'?'Tatsächliche Ist-Zahlen: Umsatz nach Kategorie + alle Kostenarten':'Kalkuliert: Sätze × Stunden, Löhne, Overhead';
  document.querySelectorAll('#srcSeg button').forEach(b=>b.classList.toggle('on',b.dataset.src===M.src));
  document.getElementById('srcHint').innerHTML = M.src==='ist'
-   ? '<b>Ist-Modus:</b> Trage deine effektiven Zahlen aus der Buchhaltung ein — Umsatz je Kategorie und jede Kostenart als CHF/Jahr. Diese Werte bestimmen direkt Summary, Finanz-Dashboard und Szenario.'
+   ? '<b>Ist-Modus:</b> Trage deine effektiven Zahlen aus der Buchhaltung ein — Umsatz je Kategorie und jede Kostenart als CHF/Jahr. Oder bequemer: die Excel-Vorlage <b>Vorlage_Monatszahlen_Import.xlsx</b> monatlich ausfüllen und über „⬆ Excel/CSV hochladen" einlesen — die Monate werden summiert übernommen und im Finanz-Dashboard als Monatsübersicht gezeigt.'
    : '<b>Kalkuliert-Modus:</b> Umsatz und Personal werden aus Sätzen × Stunden bzw. Köpfen × Löhnen berechnet — ideal für Planung/Was-wäre-wenn.';
 }
 function save(){localStorage.setItem(LS,JSON.stringify(M));}
@@ -349,11 +358,11 @@ function renderSummary(R){
   {k:'EBIT / Jahr',v:(R.ebit>=0?'+':'')+F(R.ebit)+' CHF',s:'Marge '+P1(R.marge*100),c:R.ebit>0?'good':'bad'},
   {k:'EBIT-Marge',v:P1(R.marge*100),s:'Ziel 6–8 %',c:hl(R.marge*100,6,0,true)},
   {k:'EBITDA',v:F(R.ebitda)+' CHF',s:P1(R.margeEbitda*100),c:R.ebitda>0?'good':'bad'},
-  {k:'Umsatz',v:F(R.ums)+' CHF',s:F(R.umsProFte)+' / FTE',c:hl(R.umsProFte,130000,118000,true)},
+  {k:'Umsatz',v:F(R.ums)+' CHF',s:F(R.umsProFte)+' je Vollzeitstelle',c:hl(R.umsProFte,130000,118000,true)},
   {k:'Verrechnungsgrad',v:P1(R.verrech*100),s:'Ziel 80–82 %',c:hl(R.verrech*100,80,76,true)},
-  {k:'Operatives Personal',v:P1(pPct),s:'Ziel 55–62 % v. Umsatz',c:hl(pPct,62,67,false)},
-  {k:'Führung (GF)',v:P1(gfPct),s:'Ziel ≤ 8 % v. Umsatz',c:hl(gfPct,8,12,false)},
-  {k:'Verwaltung',v:P1(verwPct),s:'Ziel ≤ 8 % v. Umsatz',c:hl(verwPct,8,10,false)},
+  {k:'Operatives Personal',v:P1(pPct),s:'Ziel 55–62 % vom Umsatz',c:hl(pPct,62,67,false)},
+  {k:'Geschäftsführung',v:P1(gfPct),s:'Ziel ≤ 8 % vom Umsatz',c:hl(gfPct,8,12,false)},
+  {k:'Verwaltung',v:P1(verwPct),s:'Ziel ≤ 8 % vom Umsatz',c:hl(verwPct,8,10,false)},
  ];
  document.getElementById('sumKpis').innerHTML=tiles.map(t=>`<div class="kpi k-${t.c}">${badge(t.c)}<div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
  const nbad=tiles.filter(t=>t.c==='bad').length, nwarn=tiles.filter(t=>t.c==='warn').length;
@@ -364,7 +373,7 @@ function renderSummary(R){
 function renderPL(R){
  const row=(l,v,b,ind)=>`<tr${b?' style="font-weight:700"':''}><td style="padding-left:${ind?24:10}px">${l}</td><td class="num" style="color:${v<0?'var(--bad)':(b&&v>0?'var(--good)':'inherit')}">${F(v)}</td></tr>`;
  let t='<tr><th>Position</th><th class="num">CHF/Jahr</th></tr>';
- t+=row('Umsatz Leistungen (UR/TH/SR/GU)',R.umsKern);
+ t+=row('Umsatz Leistungen (Reinigung · Hauswart · Garten)',R.umsKern);
  t+=row('Material weiterverrechnet',R.matAuf,false,1);
  t+=row('Winterdienst-Umsatz',R.winterUms,false,1);
  if(R.uebrig)t+=row('Übriger Umsatz',R.uebrig,false,1);
@@ -402,15 +411,15 @@ function renderFinanzen(){
   {k:'EBIT',v:(R.ebit>=0?'+':'')+F(R.ebit),s:P1(R.marge*100),c:R.ebit>0?'good':'bad'},
   {k:'EBIT-Marge',v:P1(R.marge*100),s:'Ziel 6–8 %',c:hl(R.marge*100,6,0,true)},
   {k:'Verrechnungsgrad',v:P1(R.verrech*100),s:'Ziel 80–82 %',c:hl(R.verrech*100,80,76,true)},
-  {k:'Umsatz / FTE',v:F(R.umsProFte),s:'CHF',c:hl(R.umsProFte,130000,118000,true)},
+  {k:'Umsatz je Vollzeitstelle',v:F(R.umsProFte),s:'CHF',c:hl(R.umsProFte,130000,118000,true)},
  ];
  document.getElementById('finKpis').innerHTML=tiles.map(t=>`<div class="kpi k-${t.c}"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
  // Umsatz nach Kategorie
  const c=R.revCat;
- const rev=[['UR',c.UR,'var(--ur)'],['TH',c.TH,'var(--th)'],['SR',c.SR,'var(--sr)'],['GU',c.GU,'var(--gu)'],['Material',c.Material,'var(--mut)'],['Winterdienst',c.Winter,'var(--brand2)']];
- if(c.Uebrig)rev.push(['Übrige',c.Uebrig,'#8a94a4']);
+ const rev=[['Unterhaltsreinigung',c.UR,'var(--ur)'],['Techn. Hauswart',c.TH,'var(--th)'],['Grund-/Spezialreinigung',c.SR,'var(--sr)'],['Gartenunterhalt',c.GU,'var(--gu)'],['Material',c.Material,'var(--mut)'],['Winterdienst',c.Winter,'var(--brand2)']];
+ if(c.Uebrig)rev.push(['Übriger Umsatz',c.Uebrig,'#8a94a4']);
  const mx=Math.max(1,...rev.map(r=>r[1]));
- document.getElementById('revChart').innerHTML=`<svg viewBox="0 0 500 ${rev.length*32+4}" font-family="inherit">`+rev.map((r,i)=>{const y=i*32+4,w=r[1]/mx*300;return `<text x="0" y="${y+15}" font-size="12" fill="var(--ink)">${r[0]}</text><rect x="110" y="${y+3}" width="${Math.max(1,w)}" height="18" rx="3" fill="${r[2]}"/><text x="${110+Math.max(1,w)+6}" y="${y+16}" font-size="11" fill="var(--mut)">${F(r[1])}</text>`;}).join('')+`</svg>`;
+ document.getElementById('revChart').innerHTML=`<svg viewBox="0 0 520 ${rev.length*32+4}" font-family="inherit">`+rev.map((r,i)=>{const y=i*32+4,w=r[1]/mx*240;return `<text x="0" y="${y+15}" font-size="10.5" fill="var(--ink)">${r[0]}</text><rect x="182" y="${y+3}" width="${Math.max(1,w)}" height="18" rx="3" fill="${r[2]}"/><text x="${182+Math.max(1,w)+6}" y="${y+16}" font-size="11" fill="var(--mut)">${F(r[1])}</text>`;}).join('')+`</svg>`;
  // Gauge
  const mg=R.marge*100, gmin=-6,gmax=14, ang=v=>Math.PI-((Math.max(gmin,Math.min(gmax,v))-gmin)/(gmax-gmin))*Math.PI;
  const cx=150,cy=140,rr=110; const pt=(a,r)=>[cx+r*Math.cos(a),cy-r*Math.sin(a)];
@@ -439,6 +448,7 @@ function renderFinanzen(){
   h+=`<text x="${cxx}" y="${H-6}" text-anchor="middle" font-size="9" fill="var(--mut)">${s.l.length>12?s.l.slice(0,11)+'…':s.l}</text>`;});
  h+=`</svg>`;document.getElementById('waterfall').innerHTML=h;
  renderCost(R);
+ renderMonate();
 }
 const COSTBENCH=[['Operatives Personal',r=>r.personalOp,55,62],['Geschäftsführung',r=>r.personalGF,5,8],['Verwaltung/Admin',r=>r.verw,5,8],['Fahrzeuge/Flotte',r=>r.fahr,4,5],['Material (netto)',r=>r.mat,3,4],['Winterdienst',r=>r.winterK,0,2],['Abschreibungen',r=>r.abschr,1,3],['EBIT',r=>r.ebit,6,8]];
 function renderCost(R){
@@ -455,7 +465,7 @@ function renderCost(R){
   h+=`<rect x="205" y="${y+4}" width="${Math.max(1,w(r.pct))}" height="16" rx="3" fill="${col}"/>`;
   h+=`<text x="${205+Math.max(1,w(r.pct))+5}" y="${y+16}" font-size="11" fill="var(--mut)">${r.pct.toFixed(1)}%</text>`;});
  h+=`</svg>`; document.getElementById('costChart').innerHTML=h;
- let t='<tr><th>Position</th><th class="num">CHF/Jahr</th><th class="num">% Umsatz</th><th class="num">Benchmark</th><th>Urteil</th><th class="num">Δ pp</th></tr>';
+ let t='<tr><th>Position</th><th class="num">CHF/Jahr</th><th class="num">% Umsatz</th><th class="num">Benchmark</th><th>Urteil</th><th class="num">Δ %-Pkt.</th></tr>';
  rows.forEach(r=>{t+=`<tr><td>${r.n}</td><td class="num">${F(r.v)}</td><td class="num">${r.pct.toFixed(1)}%</td><td class="num">${r.lo}–${r.hi}%</td><td><span class="tag ${r.cls}">${r.vd}</span></td><td class="num">${r.dev>0?'+':''}${r.dev.toFixed(1)}</td></tr>`;});
  document.getElementById('costTable').innerHTML=t;
 }
@@ -483,9 +493,9 @@ function renderRates(){
  document.getElementById('rateTable').innerHTML=t;
  document.getElementById('rateSrc').innerHTML='Quellen: <a href="https://www.slavi.ch/reinigungsofferte-schweiz-ratgeber-fuer-faire-preise-und-perfekte-qualitaet-2026/" target="_blank" rel="noopener">SLAVI 2026</a> · <a href="https://www.ofri.ch/kosten/unterhaltsreinigung" target="_blank" rel="noopener">ofri</a> · <a href="https://www.ofri.ch/kosten/hauswartung" target="_blank" rel="noopener">ofri Hauswartung</a> · <a href="https://serenagartenbau.ch/preise" target="_blank" rel="noopener">Serena Gartenbau ZH</a>';
 }
-const LEVERS=[['Führung schlank (Vorarbeiter statt Betriebsleiter)','+56k','GF führt operativ mit; keine zweite Führungsebene unter ~25 FTE.'],['Marktgerechte Ansätze + Teuerungsklausel','+114k','Nur bis Marktmittel, Benchmark-belegt.'],['Verrechnungsgrad 76→80 %','+90k','Routing, weniger Leerfahrten, Montags-Rüsten.'],['Wachstum in 73 %-Gebiete','+50–100k','Neue Objekte in Leerkapazität — höchste Grenzmarge.'],['Periodik/SR in lokale Routen','−1 FTE','Keine eigenen Spezial-Crews.'],['Winterdienst als Profitcenter','+40k','Bereitschaft mit eigenem Ansatz.']];
+const LEVERS=[['Führung schlank (Vorarbeiter statt Betriebsleiter)','+56k','Geschäftsführung führt operativ mit; keine zweite Führungsebene unter ~25 Vollzeitstellen.'],['Marktgerechte Ansätze + Teuerungsklausel','+114k','Nur bis Marktmittel, Benchmark-belegt.'],['Verrechnungsgrad 76→80 %','+90k','Routing, weniger Leerfahrten, Montags-Rüsten.'],['Wachstum in 73 %-Gebiete','+50–100k','Neue Objekte in Leerkapazität — höchste Grenzmarge.'],['Periodik/Spezialreinigung in lokale Routen','−1 Stelle','Keine eigenen Spezial-Crews.'],['Winterdienst als Profitcenter','+40k','Bereitschaft mit eigenem Ansatz.']];
 function renderLevers(){document.getElementById('levers').innerHTML=LEVERS.map(l=>`<div class="measure"><h4>${l[0]} <span class="imp">${l[1]}</span></h4><div class="mm">${l[2]}</div></div>`).join('');
- document.getElementById('planRules').innerHTML=['Verrechnungsgrad-Ziel <b>80–82 %</b>','Auslastung je Route <b>85–92 %</b>, alle <b>100 % Pensum</b>','Reinigung <b>~180–250 m²/h</b>, Garten <b>~150–220 m²/h</b>','Fahranteil <b>&lt; 8 %</b> der Arbeitszeit','Aufgabenbasierte Taktung + Jahres-Overlay','Periodik in lokale Route (keine Spezial-Crew &lt; 25 FTE)','Frequenzen/Aufwand <b>jährlich validieren</b>'].map(x=>`<li>${x}</li>`).join('');}
+ document.getElementById('planRules').innerHTML=['Verrechnungsgrad-Ziel <b>80–82 %</b>','Auslastung je Route <b>85–92 %</b>, alle <b>100 % Pensum</b>','Reinigung <b>~180–250 m²/h</b>, Garten <b>~150–220 m²/h</b>','Fahranteil <b>&lt; 8 %</b> der Arbeitszeit','Aufgabenbasierte Taktung + Jahres-Overlay','Periodik in lokale Route (keine Spezial-Crew &lt; 25 Vollzeitstellen)','Frequenzen/Aufwand <b>jährlich validieren</b>'].map(x=>`<li>${x}</li>`).join('');}
 
 /* ===== Szenario ===== */
 const SCENL=[
@@ -648,7 +658,7 @@ async function loadFrame(force){
 }
 function renderPlanKpis(){
  const R=compute(M);
- const tiles=[{k:'Routen / Fahrzeuge',v:Math.round(M.routen)},{k:'FTE operativ',v:Math.round(M.fte*10)/10},{k:'Verrechenb. Std/Jahr',v:F(R.billH)},{k:'Verrechnungsgrad',v:P1(R.verrech*100)}];
+ const tiles=[{k:'Routen / Fahrzeuge',v:Math.round(M.routen)},{k:'Mitarbeitende operativ (VZ)',v:Math.round(M.fte*10)/10},{k:'Verrechenb. Std/Jahr',v:F(R.billH)},{k:'Verrechnungsgrad',v:P1(R.verrech*100)}];
  document.getElementById('planKpis').innerHTML=tiles.map(t=>`<div class="kpi"><div class="k">${t.k}</div><div class="v">${t.v}</div></div>`).join('');
 }
 
@@ -679,12 +689,77 @@ function applyEstimate(e,label){ if(!e||e.n===0){document.getElementById('status
  M.hoursUR=Math.round(e.ur);M.hoursTH=Math.round(e.th);M.hoursSR=Math.round(e.sr);M.hoursGU=Math.round(e.gu);
  const billH=e.ur+e.th+e.sr+e.gu;M.fte=Math.round(billH/M.verrechHProFTE*10)/10;M.routen=Math.max(1,Math.ceil(M.fte));M.nHauswarte=Math.max(0,M.routen-M.nVorarbeiter);
  save();renderInputs();renderAll();renderPlanKpis();
- document.getElementById('status').textContent='✓ '+e.n+' Objekte aus '+label+' geschätzt → '+F(billH)+' Std/Jahr, '+M.fte+' FTE, '+M.routen+' Routen. Zum Sichern: „☁ In GitHub speichern".';}
+ document.getElementById('status').textContent='✓ '+e.n+' Objekte aus '+label+' geschätzt → '+F(billH)+' Std/Jahr, '+M.fte+' Vollzeitstellen, '+M.routen+' Routen. Zum Sichern: „☁ In GitHub speichern".';}
+/* ===== Monatszahlen (Vorlage_Monatszahlen_Import.xlsx) ===== */
+const MONNAME=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+function monIdx(s){s=(s||'').toString().trim().toLowerCase();
+ const p3={jan:0,feb:1,'mär':2,mae:2,mar:2,apr:3,mai:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dez:11}[s.slice(0,3)];
+ if(p3!=null)return p3; const n=parseInt(s,10); return (n>=1&&n<=12)?n-1:-1;}
+function isMonCsv(txt){const l=(txt.split('\n')[0]||'').toLowerCase();return l.includes('monat')&&l.includes('umsatz');}
+function parseMonate(txt){txt=txt.replace(/\r/g,'');const L=txt.split('\n').filter(l=>l.trim());if(L.length<2)return null;
+ const d=(L[0].split(';').length>L[0].split(',').length)?';':',';
+ const H=L[0].split(d).map(h=>h.replace(/^"|"$/g,'').trim().toLowerCase());
+ const ix=(...k)=>{for(const kk of k){const i=H.findIndex(h=>h.includes(kk));if(i>=0)return i;}return -1;};
+ const c={mon:ix('monat'),ur:ix('unterhaltsrein'),th:ix('techn'),sr:ix('spezialrein','grund'),gu:ix('gartenunterhalt','garten'),
+  mat:ix('weiterverrechnet'),ue:ix('uebrig','übrig'),pOp:ix('personal operativ'),pGF:ix('geschaeftsfuehrung','geschäftsführung'),
+  fahr:ix('fahrzeug'),matK:ix('materialaufwand'),verw:ix('verwaltung'),abschr:ix('abschreib'),sonst:ix('sonstige')};
+ c.wu=H.findIndex(h=>h.includes('winterdienst')&&!h.includes('kosten'));
+ c.wk=H.findIndex(h=>h.includes('winter')&&h.includes('kosten'));
+ if(c.mon<0)return null;
+ const nu=s=>{s=(s||'').toString().replace(/['’]/g,'').replace(',','.').replace(/[^0-9.\-]/g,'');const n=parseFloat(s);return isNaN(n)?0:n;};
+ const rows=[];
+ for(let i=1;i<L.length;i++){const r=L[i].split(d).map(x=>x.replace(/^"|"$/g,''));const mi=monIdx(r[c.mon]);if(mi<0)continue;
+  const g=k=>c[k]>=0?nu(r[c[k]]):0;
+  const row={i:mi,m:MONNAME[mi],ur:g('ur'),th:g('th'),sr:g('sr'),gu:g('gu'),mat:g('mat'),wu:g('wu'),ue:g('ue'),
+   pOp:g('pOp'),pGF:g('pGF'),fahr:g('fahr'),matK:g('matK'),wk:g('wk'),verw:g('verw'),abschr:g('abschr'),sonst:g('sonst')};
+  row.rev=row.ur+row.th+row.sr+row.gu+row.mat+row.wu+row.ue;
+  row.cost=row.pOp+row.pGF+row.fahr+row.matK+row.wk+row.verw+row.abschr+row.sonst;
+  if(row.rev===0&&row.cost===0)continue;
+  rows.push(row);}
+ rows.sort((a,b)=>a.i-b.i); return rows;}
+function applyMonate(rows,label){ if(!rows||!rows.length){document.getElementById('status').textContent='⚠ Keine ausgefüllten Monatszeilen gefunden — bitte die Vorlage_Monatszahlen_Import.xlsx verwenden.';return;}
+ M.monate=rows; M.src='ist';
+ const S=k=>rows.reduce((a,r)=>a+r[k],0);
+ M.istUR=S('ur');M.istTH=S('th');M.istSR=S('sr');M.istGU=S('gu');M.istMat=S('mat');M.istWinterUms=S('wu');M.istUebrigUms=S('ue');
+ M.istPersonalOp=S('pOp');M.istPersonalGF=S('pGF');M.istFahr=S('fahr');M.istMatK=S('matK');M.istWinterK=S('wk');M.istVerw=S('verw');M.istAbschr=S('abschr');M.istSonstK=S('sonst');
+ save();renderInputs();renderAll();renderPlanKpis();
+ const span=rows.length===1?rows[0].m:(rows[0].m+'–'+rows[rows.length-1].m);
+ document.getElementById('status').textContent='✓ '+rows.length+' Monat(e) importiert ('+span+') aus '+label+' → als Ist-Zahlen übernommen. „☁ In GitHub speichern" legt sie im privaten Repo ab.';
+ switchTab('finanzen');}
+function renderMonate(){ const body=document.getElementById('monBody'); if(!body)return;
+ const rows=toArrM(M.monate);
+ const up=document.getElementById('monUpBtn'),gh=document.getElementById('monGhBtn');
+ if(up)up.onclick=()=>document.getElementById('file').click();
+ if(gh)gh.onclick=ghSaveData;
+ if(!rows.length){ body.innerHTML='<div class="src">Noch keine Monatszahlen. Fülle die Vorlage <b>Vorlage_Monatszahlen_Import.xlsx</b> aus (eine Zeile pro Monat: aller Umsatz + alle Kostenarten) und lade sie über <b>„⬆ Monats-Excel hochladen"</b> hoch — die Summen werden als Ist-Zahlen übernommen und hier als Monatsübersicht angezeigt. „☁ Ins private Repo speichern" sichert alles in deinem privaten Repository.</div>'; return; }
+ const W=700,BH=150,pb=26,mx=Math.max(1,...rows.map(r=>Math.max(r.rev,r.cost)));
+ const n=rows.length,gp=(W-30)/n,bw=Math.min(26,gp*0.32);
+ let svg=`<svg viewBox="0 0 ${W} ${BH+pb+18}" font-family="inherit">`;
+ rows.forEach((r,i)=>{const cx=18+i*gp+gp/2, hR=r.rev/mx*BH, hC=r.cost/mx*BH, erg=r.rev-r.cost;
+  svg+=`<rect x="${cx-bw-1.5}" y="${16+BH-hR}" width="${bw}" height="${Math.max(2,hR)}" rx="2" fill="var(--brand)"><title>${r.m}: Umsatz ${F(r.rev)}</title></rect>`;
+  svg+=`<rect x="${cx+1.5}" y="${16+BH-hC}" width="${bw}" height="${Math.max(2,hC)}" rx="2" fill="var(--bad)" opacity="0.75"><title>${r.m}: Kosten ${F(r.cost)}</title></rect>`;
+  svg+=`<text x="${cx}" y="${12}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${erg>=0?'var(--good)':'var(--bad)'}">${erg>=0?'+':''}${F(erg)}</text>`;
+  svg+=`<text x="${cx}" y="${BH+pb+8}" text-anchor="middle" font-size="9.5" fill="var(--mut)">${r.m.slice(0,3)}</text>`;});
+ svg+=`</svg>`;
+ let t='<tr><th>Monat</th><th class="num">Umsatz</th><th class="num">Kosten</th><th class="num">Ergebnis</th><th class="num">Marge</th></tr>';
+ rows.forEach(r=>{const erg=r.rev-r.cost;t+=`<tr><td>${r.m}</td><td class="num">${F(r.rev)}</td><td class="num">${F(r.cost)}</td><td class="num" style="font-weight:700;color:${erg>=0?'var(--good)':'var(--bad)'}">${erg>=0?'+':''}${F(erg)}</td><td class="num">${r.rev?((erg/r.rev*100).toFixed(1)+'%'):'–'}</td></tr>`;});
+ const SR=k=>rows.reduce((a,r)=>a+r[k],0); const totR=SR('rev'),totC=SR('cost');
+ t+=`<tr style="font-weight:700;border-top:2px solid var(--line)"><td>Total (${rows.length} Mt.)</td><td class="num">${F(totR)}</td><td class="num">${F(totC)}</td><td class="num" style="color:${totR-totC>=0?'var(--good)':'var(--bad)'}">${totR-totC>=0?'+':''}${F(totR-totC)}</td><td class="num">${totR?(((totR-totC)/totR*100).toFixed(1)+'%'):'–'}</td></tr>`;
+ body.innerHTML=`<div class="legend" style="margin:0 0 6px"><span><i style="background:var(--brand)"></i>Umsatz</span><span><i style="background:var(--bad)"></i>Kosten</span><span style="color:var(--mut)">Zahl über den Balken = Monatsergebnis</span></div>${svg}<table style="margin-top:8px">${t}</table>`;
+}
+const toArrM=x=>Array.isArray(x)?x:(x==null?[]:[x]);
 function handleFile(f){const name=(f.name||'').toLowerCase();
  if(name.endsWith('.xlsx')||name.endsWith('.xls')){ handleExcel(f); return; }
- const rd=new FileReader();rd.onload=()=>applyEstimate(parseList(rd.result),'CSV-Liste');rd.readAsText(f,'utf-8');}
+ const rd=new FileReader();rd.onload=()=>{ const txt=rd.result;
+  if(isMonCsv(txt)){ applyMonate(parseMonate(txt),'CSV «'+f.name+'»'); } else { applyEstimate(parseList(txt),'CSV-Liste'); } };
+ rd.readAsText(f,'utf-8');}
 function handleExcel(f){ if(!window.XLSX){document.getElementById('status').textContent='⚠ Excel-Bibliothek nicht geladen (Internet nötig). Alternativ die Datei als CSV speichern und hochladen.';return;}
- const rd=new FileReader();rd.onload=()=>{ try{ const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const csv=XLSX.utils.sheet_to_csv(ws,{FS:';'}); applyEstimate(parseList(csv),'Excel «'+f.name+'»'); }
+ const rd=new FileReader();rd.onload=()=>{ try{ const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'});
+  const monSheet=wb.SheetNames.find(n=>n.toLowerCase().startsWith('monat'));
+  const ws=wb.Sheets[monSheet||wb.SheetNames[0]];
+  const csv=XLSX.utils.sheet_to_csv(ws,{FS:';'});
+  if(monSheet||isMonCsv(csv)){ applyMonate(parseMonate(csv),'Excel «'+f.name+'»'); }
+  else { applyEstimate(parseList(csv),'Excel «'+f.name+'»'); } }
   catch(err){ document.getElementById('status').textContent='⚠ Excel konnte nicht gelesen werden: '+err.message; } };
  rd.readAsArrayBuffer(f);}
 
