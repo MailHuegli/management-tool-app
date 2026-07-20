@@ -192,14 +192,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 <!-- PLANUNG -->
 <section class="tabpane" data-pane="planung">
   <h2 class="sec">Tourenplanung</h2>
-  <div class="lead" id="planLead">Dashboard (bearbeiten) & Jahresplan (52 Wochen)</div>
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-    <div class="seg" id="planSeg">
-      <button data-pv="editor" class="on">Dashboard (bearbeiten)</button>
-      <button data-pv="jahr">Jahresplan (52 Wochen)</button>
-    </div>
-    <span class="src" id="planViewNote"></span>
-  </div>
+  <div class="lead">Jede Tour im Detail · 52 Wochen · beschriftete Kalendereinträge · Auslastungs-Übersicht</div>
   <div class="kpis" id="planKpis" style="margin-bottom:14px"></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <button class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" id="planLoadBtn">⟳ Laden</button>
@@ -564,11 +557,12 @@ function renderAll(){const R=compute(M);renderSummary(R);renderPL(R);renderFinan
 
 /* ===== GitHub-Sync ===== */
 const GHLS='maintain_github';
-const GH=Object.assign({token:'',owner:'',repo:'',branch:'main',dataPath:'data/cockpit-data.json',kennzahlenPath:'_kennzahlen_v2.json',einsatzplanPath:'WSG_Touren_Dashboard.html',jahresplanPath:'WSG_Jahresplan.html'},
+const GH=Object.assign({token:'',owner:'',repo:'',branch:'main',dataPath:'data/cockpit-data.json',kennzahlenPath:'_kennzahlen_v2.json',einsatzplanPath:'WSG_Tourenplanung.html'},
   (window.MAINTAIN_CONFIG&&window.MAINTAIN_CONFIG.github)||{});
 GH.dataSha=null; GH.connected=false; GH.repoName=''; GH.repoPrivate=null;
 try{const g=JSON.parse(localStorage.getItem(GHLS)||'null');if(g)Object.assign(GH,g);}catch(e){}
-if(GH.einsatzplanPath==='WSG_Einsatzplan_v2.html'){GH.einsatzplanPath='WSG_Touren_Dashboard.html';}  /* Umstieg statische Ansicht -> interaktiver Editor */
+if(['WSG_Einsatzplan_v2.html','WSG_Touren_Dashboard.html','WSG_Jahresplan.html'].includes(GH.einsatzplanPath)){GH.einsatzplanPath='WSG_Tourenplanung.html';}  /* Umstieg auf konsolidiertes Planungstool */
+delete GH.jahresplanPath;
 function ghSaveCfg(){try{localStorage.setItem(GHLS,JSON.stringify({token:GH.token,owner:GH.owner,repo:GH.repo,branch:GH.branch,dataPath:GH.dataPath,kennzahlenPath:GH.kennzahlenPath,einsatzplanPath:GH.einsatzplanPath}));}catch(e){}}
 function ghHeaders(){return {'Authorization':'Bearer '+GH.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
 function ghEnc(p){return p.split('/').map(encodeURIComponent).join('/');}
@@ -620,28 +614,19 @@ function renderGithub(){
 }
 
 /* ===== Tourenplanung ===== */
-let planLoaded=false, planView='editor';
-function curPlanPath(){return planView==='jahr'?GH.jahresplanPath:GH.einsatzplanPath;}
-function renderPlanToggle(){
- document.querySelectorAll('#planSeg button').forEach(b=>b.classList.toggle('on',b.dataset.pv===planView));
- document.getElementById('planViewNote').textContent = planView==='jahr'
-   ? 'Nur-Lese-Kalender: jede Woche des Jahres, alle Frequenzen, Kategorie-Labels (UR/GU/TH/SR/WD).'
-   : 'Bearbeiten: Objekte per Drag&Drop, Objekt erfassen/importieren/löschen, „☁ In GitHub speichern".';
-}
+let planLoaded=false;
 async function loadFrame(force){
  const f=document.getElementById('planFrame'), msg=document.getElementById('planMsg'), openBtn=document.getElementById('planOpenBtn');
- renderPlanToggle();
- if(f.dataset.loaded===planView && !force) return;
+ if(f.dataset.loaded==='1' && !force) return;
  const showMsg=h=>{msg.style.display='block';msg.innerHTML=h;f.style.display='none';openBtn.disabled=true;f.dataset.loaded='';};
- const showFrame=url=>{f.setAttribute('src',url);f.style.display='';msg.style.display='none';f.dataset.loaded=planView;planLoaded=true;openBtn.disabled=false;openBtn.onclick=()=>window.open(url,'_blank');};
- const label=planView==='jahr'?'Jahresplan':'Editor';
- const path=curPlanPath();
+ const showFrame=url=>{f.setAttribute('src',url);f.style.display='';msg.style.display='none';f.dataset.loaded='1';planLoaded=true;openBtn.disabled=false;openBtn.onclick=()=>window.open(url,'_blank');};
+ const path=GH.einsatzplanPath;
  if(!(GH.connected&&GH.token)){ showMsg('Die Tourenplanung liegt in deinem <b>privaten</b> Repo. Verbinde dich zuerst im Tab <b>„GitHub-Sync"</b> — dann wird sie hier geladen.'); return; }
- if(!path){ showMsg('Kein Pfad für den '+label+' gesetzt (config.js / GitHub-Sync).'); return; }
- showMsg('Lade '+label+' aus '+GH.repoName+' …');
+ if(!path){ showMsg('Kein Pfad für die Tourenplanung gesetzt (config.js / GitHub-Sync).'); return; }
+ showMsg('Lade Tourenplanung aus '+GH.repoName+' …');
  try{ const file=await ghGetFile(path);
   if(file){ const blob=new Blob([file.text],{type:'text/html'}); showFrame(URL.createObjectURL(blob)); return; }
-  showMsg('⚠ '+label+' nicht gefunden unter <b>'+path+'</b> in '+GH.repoName+'.<br>→ Datei ins private Repo laden oder Pfad im Tab „GitHub-Sync" anpassen.');
+  showMsg('⚠ Tourenplanung nicht gefunden unter <b>'+path+'</b> in '+GH.repoName+'.<br>→ Datei ins private Repo laden oder Pfad im Tab „GitHub-Sync" anpassen.');
  }catch(e){ showMsg('⚠ Fehler beim Laden: '+e.message); }
 }
 function renderPlanKpis(){
@@ -702,7 +687,6 @@ document.querySelectorAll('#srcSeg button').forEach(b=>b.onclick=()=>{M.src=b.da
 document.querySelectorAll('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;renderFinanzen();});
 document.getElementById('loadPlan').onclick=()=>loadPlan(false);
 document.getElementById('planLoadBtn').onclick=()=>loadFrame(true);
-document.querySelectorAll('#planSeg button').forEach(b=>b.onclick=()=>{planView=b.dataset.pv;loadFrame(true);});
 document.getElementById('uploadBtn').onclick=()=>document.getElementById('file').click();
 /* GitHub-Sync Events */
 document.getElementById('ghSaveTop').onclick=ghSaveData;
