@@ -164,6 +164,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
   <div class="kpis" id="finKpis" style="margin-bottom:16px"></div>
   <div class="card" id="monCard">
     <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Monatszahlen — Umsatz · Kosten · Ergebnis
+      <button class="btn" id="monTplBtn" style="border-color:var(--line);background:var(--soft);color:var(--ink);font-size:12px;padding:5px 10px">⬇ Excel-Vorlage</button>
       <button class="btn" id="monUpBtn" style="border-color:var(--line);background:var(--soft);color:var(--ink);font-size:12px;padding:5px 10px">⬆ Monats-Excel hochladen</button>
       <button class="btn" id="monGhBtn" style="border-color:var(--line);background:var(--soft);color:var(--ink);font-size:12px;padding:5px 10px">☁ Ins private Repo speichern</button>
     </h3>
@@ -294,7 +295,7 @@ const GROUPS_PLAN=[
 function renderInputs(){
  const G = M.src==='ist'?GROUPS_IST:GROUPS_PLAN;
  document.getElementById('inputGroups').innerHTML=G.map((g,gi)=>`<details class="grp${g.accent?' accent':''}"${gi<2?' open':''}><summary>${g.title}<span class="chev">▾</span></summary><div class="fields">${g.fields.map(f=>`<div class="fld"><label>${f[1]}</label><input type="number" step="any" data-k="${f[0]}" value="${M[f[0]]}"></div>`).join('')}</div></details>`).join('');
- document.querySelectorAll('#inputGroups input').forEach(el=>el.oninput=()=>{M[el.dataset.k]=parseFloat(el.value)||0;save();renderAll();});
+ document.querySelectorAll('#inputGroups input').forEach(el=>el.oninput=()=>{M[el.dataset.k]=parseFloat(el.value)||0;DIRTY.add(el.dataset.k);save();renderAll();});
  document.getElementById('inpLead').textContent = M.src==='ist'?'Tatsächliche Ist-Zahlen: Umsatz nach Kategorie + alle Kostenarten':'Kalkuliert: Sätze × Stunden, Löhne, Overhead';
  document.querySelectorAll('#srcSeg button').forEach(b=>b.classList.toggle('on',b.dataset.src===M.src));
  document.getElementById('srcHint').innerHTML = M.src==='ist'
@@ -302,6 +303,9 @@ function renderInputs(){
    : '<b>Kalkuliert-Modus:</b> Umsatz und Personal werden aus Sätzen × Stunden bzw. Köpfen × Löhnen berechnet — ideal für Planung/Was-wäre-wenn.';
 }
 function save(){localStorage.setItem(LS,JSON.stringify(M));}
+/* Merkt sich, welche Felder der Nutzer in dieser Sitzung geändert hat → beim Speichern werden nur diese übernommen, der Rest im Repo bleibt erhalten. */
+const DIRTY=new Set();
+function markDirty(){for(let i=0;i<arguments.length;i++)DIRTY.add(arguments[i]);}
 
 /* ===== Rechenkern (modusunabhängig) ===== */
 function base(m){
@@ -508,8 +512,8 @@ const SCENL=[
 const SCEN={};SCENL.forEach(l=>SCEN[l.id]={on:false,val:l.def});
 function renderScenLevers(){
  document.getElementById('scenLevers').innerHTML=SCENL.map(l=>`<div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><label style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;cursor:pointer"><input type="checkbox" data-l="${l.id}" ${SCEN[l.id].on?'checked':''}><span><b>${l.label}</b><br><span class="src">${l.hint}</span></span></label><input type="number" step="any" data-lv="${l.id}" value="${SCEN[l.id].val}" style="width:110px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink);text-align:right"><span class="src" style="width:34px">${l.unit}</span></div>`).join('');
- document.querySelectorAll('#scenLevers input[data-l]').forEach(el=>el.onchange=()=>{SCEN[el.dataset.l].on=el.checked;saveScen();renderScenario();renderFinToggle();});
- document.querySelectorAll('#scenLevers input[data-lv]').forEach(el=>el.oninput=()=>{SCEN[el.dataset.lv].val=parseFloat(el.value)||0;saveScen();renderScenario();});
+ document.querySelectorAll('#scenLevers input[data-l]').forEach(el=>el.onchange=()=>{SCEN[el.dataset.l].on=el.checked;markDirty('__scenario');saveScen();renderScenario();renderFinToggle();});
+ document.querySelectorAll('#scenLevers input[data-lv]').forEach(el=>el.oninput=()=>{SCEN[el.dataset.lv].val=parseFloat(el.value)||0;markDirty('__scenario');saveScen();renderScenario();});
 }
 function scLabel(id){const v=SCEN[id].val;return id==='overhead'?'Overhead −'+F(v):id==='winter'?'Winterdienst +'+F(v):id==='verrech'?'Verrechn. → '+v+'%':id==='growth'?'Wachstum +'+F(v)+' h':'Preis +'+v+'%';}
 function computeScenario(){
@@ -610,10 +614,25 @@ async function ghPutFile(path,content,message,sha){const body={message:message||
  if(r.status===409)throw new Error('Konflikt (409) — bitte zuerst „Von GitHub laden".');
  if(!r.ok){let t='';try{t=(await r.json()).message||'';}catch(e){}throw new Error('Speichern fehlgeschlagen ('+r.status+') '+t);}
  return (await r.json()).content.sha;}
-function ghPayload(){return JSON.stringify({schema:'maintain-cockpit/1',model:M,scenario:{SCEN,TARGET},savedAt:new Date().toISOString()},null,1);}
+function ghBuildPayload(model,scenario){return JSON.stringify({schema:'maintain-cockpit/1',model,scenario,savedAt:new Date().toISOString()},null,1);}
 async function ghSaveData(){if(!GH.connected){ghStatus('Zuerst im Tab „GitHub-Sync" verbinden.',true);return;}
- try{ghStatus('Speichern…');const sha=await ghPutFile(GH.dataPath,ghPayload(),'Cockpit-Daten '+new Date().toLocaleString('de-CH'),GH.dataSha);GH.dataSha=sha;
-  ghStatus('✓ In GitHub gespeichert: '+GH.repoName+' / '+GH.dataPath+' — '+new Date().toLocaleTimeString('de-CH'));renderGithub();
+ try{ghStatus('Speichern…');
+  /* Aktuellen Repo-Stand holen und NUR die in dieser Sitzung geänderten Felder überlagern —
+     alle übrigen bereits gespeicherten Werte bleiben unverändert erhalten. */
+  let remoteModel={}, remoteScen=null;
+  const cur=await ghGetFile(GH.dataPath);
+  if(cur){try{const d=JSON.parse(cur.text);remoteModel=d.model||{};remoteScen=d.scenario||null;}catch(e){}GH.dataSha=cur.sha;}
+  const mergedModel=Object.assign({},DEF,remoteModel);
+  let nChanged=0;
+  DIRTY.forEach(k=>{ if(k==='__scenario'||k==='__target')return; mergedModel[k]=M[k]; nChanged++; });
+  const scenChanged=DIRTY.has('__scenario')||DIRTY.has('__target');
+  const scenarioOut=scenChanged?{SCEN,TARGET}:(remoteScen||{SCEN,TARGET});
+  const sha=await ghPutFile(GH.dataPath,ghBuildPayload(mergedModel,scenarioOut),'Cockpit-Daten '+new Date().toLocaleString('de-CH'),GH.dataSha);GH.dataSha=sha;
+  /* Lokalen Stand an das Repo angleichen, DIRTY leeren */
+  M=Object.assign({},DEF,mergedModel);
+  if(scenarioOut){if(scenarioOut.SCEN)SCENL.forEach(l=>{if(scenarioOut.SCEN[l.id])SCEN[l.id]=Object.assign({},SCEN[l.id],scenarioOut.SCEN[l.id]);});if(scenarioOut.TARGET)Object.assign(TARGET,scenarioOut.TARGET);}
+  save();saveScen();DIRTY.clear();renderInputs();renderAll();renderPlanKpis();const tm=document.getElementById('targetMarge');if(tm)tm.value=TARGET.margeZiel;
+  ghStatus('✓ Gespeichert — '+(nChanged||scenChanged?((nChanged?nChanged+' geänderte Zahl'+(nChanged===1?'':'en'):'Szenario')+' übernommen, übrige Repo-Werte erhalten'):'keine Änderungen')+': '+GH.repoName+' / '+GH.dataPath);renderGithub();
  }catch(e){ghStatus('✗ '+e.message,true);}}
 async function ghLoadData(){if(!GH.connected)return;
  try{const f=await ghGetFile(GH.dataPath);
@@ -621,7 +640,7 @@ async function ghLoadData(){if(!GH.connected)return;
   const d=JSON.parse(f.text);GH.dataSha=f.sha;
   if(d.model)M=Object.assign({},DEF,d.model);
   if(d.scenario){if(d.scenario.SCEN)SCENL.forEach(l=>{if(d.scenario.SCEN[l.id])SCEN[l.id]=Object.assign({},SCEN[l.id],d.scenario.SCEN[l.id]);});if(d.scenario.TARGET)Object.assign(TARGET,d.scenario.TARGET);}
-  save();saveScen();renderInputs();renderAll();renderPlanKpis();const tm=document.getElementById('targetMarge');if(tm)tm.value=TARGET.margeZiel;
+  DIRTY.clear();save();saveScen();renderInputs();renderAll();renderPlanKpis();const tm=document.getElementById('targetMarge');if(tm)tm.value=TARGET.margeZiel;
   ghStatus('✓ Daten aus GitHub geladen ('+GH.repoName+') — Stand '+(d.savedAt?new Date(d.savedAt).toLocaleString('de-CH'):'?'));
  }catch(e){ghStatus('✗ '+e.message,true);}}
 async function ghConnect(auto){
@@ -671,6 +690,7 @@ async function loadPlan(silent){
   M.hoursUR=k.kategorienH.UR;M.hoursTH=k.kategorienH.TH;M.hoursSR=k.kategorienH.SR;M.hoursGU=k.kategorienH.GU;
   M.fte=k.fteTotal;M.routen=k.routen;M.nHauswarte=Math.max(0,k.routen-M.nVorarbeiter);
   M.rateUR=k.ansaetze.UR;M.rateTH=k.ansaetze.TH;M.rateSR=k.ansaetze.SR;M.rateGU=k.ansaetze.GU;
+  markDirty('src','hoursUR','hoursTH','hoursSR','hoursGU','fte','routen','nHauswarte','rateUR','rateTH','rateSR','rateGU');
   save();renderInputs();renderAll();renderPlanKpis();
   document.getElementById('status').textContent='✓ Ist-Werte aus Tourenplanung geladen ('+k.objekte+' Objekte, '+k.routen+' Routen).';
  }catch(e){ if(!silent) document.getElementById('status').textContent='⚠ Tourenplanung nicht erreichbar — im Tab „GitHub-Sync" verbinden (dann werden die Kennzahlen aus dem privaten Repo geladen).'; }
@@ -688,6 +708,7 @@ function applyEstimate(e,label){ if(!e||e.n===0){document.getElementById('status
  M.src='plan';
  M.hoursUR=Math.round(e.ur);M.hoursTH=Math.round(e.th);M.hoursSR=Math.round(e.sr);M.hoursGU=Math.round(e.gu);
  const billH=e.ur+e.th+e.sr+e.gu;M.fte=Math.round(billH/M.verrechHProFTE*10)/10;M.routen=Math.max(1,Math.ceil(M.fte));M.nHauswarte=Math.max(0,M.routen-M.nVorarbeiter);
+ markDirty('src','hoursUR','hoursTH','hoursSR','hoursGU','fte','routen','nHauswarte');
  save();renderInputs();renderAll();renderPlanKpis();
  document.getElementById('status').textContent='✓ '+e.n+' Objekte aus '+label+' geschätzt → '+F(billH)+' Std/Jahr, '+M.fte+' Vollzeitstellen, '+M.routen+' Routen. Zum Sichern: „☁ In GitHub speichern".';}
 /* ===== Monatszahlen (Vorlage_Monatszahlen_Import.xlsx) ===== */
@@ -722,15 +743,27 @@ function applyMonate(rows,label){ if(!rows||!rows.length){document.getElementByI
  const S=k=>rows.reduce((a,r)=>a+r[k],0);
  M.istUR=S('ur');M.istTH=S('th');M.istSR=S('sr');M.istGU=S('gu');M.istMat=S('mat');M.istWinterUms=S('wu');M.istUebrigUms=S('ue');
  M.istPersonalOp=S('pOp');M.istPersonalGF=S('pGF');M.istFahr=S('fahr');M.istMatK=S('matK');M.istWinterK=S('wk');M.istVerw=S('verw');M.istAbschr=S('abschr');M.istSonstK=S('sonst');
+ markDirty('src','monate','istUR','istTH','istSR','istGU','istMat','istWinterUms','istUebrigUms','istPersonalOp','istPersonalGF','istFahr','istMatK','istWinterK','istVerw','istAbschr','istSonstK');
  save();renderInputs();renderAll();renderPlanKpis();
  const span=rows.length===1?rows[0].m:(rows[0].m+'–'+rows[rows.length-1].m);
  document.getElementById('status').textContent='✓ '+rows.length+' Monat(e) importiert ('+span+') aus '+label+' → als Ist-Zahlen übernommen. „☁ In GitHub speichern" legt sie im privaten Repo ab.';
  switchTab('finanzen');}
+function dlMonatsVorlage(){ if(!window.XLSX){document.getElementById('status').textContent='⚠ Excel-Bibliothek nicht geladen (Internet nötig).';return;}
+ const head=['Monat','Umsatz Unterhaltsreinigung','Umsatz Techn. Hauswart','Umsatz Grund-/Spezialreinigung','Umsatz Gartenunterhalt','Material weiterverrechnet','Umsatz Winterdienst','Uebriger Umsatz','Personal operativ (inkl. Sozialkosten)','Geschaeftsfuehrung (inkl. Sozialkosten)','Fahrzeuge/Flotte','Materialaufwand','Winterdienst-Kosten','Verwaltung/Overhead','Abschreibungen','Sonstige Kosten'];
+ const ex={Januar:[96000,15500,6200,2400,3100,14500,0,78500,14200,8600,4300,6800,10400,2100,0],Februar:[95500,15200,5900,2600,3000,11800,500,78500,14200,8600,4100,5400,10200,2100,0]};
+ const aoa=[head]; MONNAME.forEach(m=>{ aoa.push([m].concat(ex[m]||new Array(15).fill(''))); });
+ const anl=[['Thema','Hinweis'],['Was ist das?','Monatliche Betriebs- & Finanzkennzahlen (CHF exkl. MwSt.), eine Zeile pro Monat.'],['Import','Cockpit: „⬆ Monats-Excel hochladen" — die Summen werden als Ist-Zahlen übernommen und im Finanz-Dashboard als Monatsübersicht gezeigt.'],['Teiljahr','Es müssen nicht alle 12 Monate ausgefüllt sein — vorhandene werden summiert.'],['Speichern','„☁ Ins private Repo speichern" sichert die Zahlen im privaten Repo.']];
+ const wb=XLSX.utils.book_new();
+ const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12}].concat(new Array(15).fill({wch:24})); XLSX.utils.book_append_sheet(wb,ws,'Monatszahlen');
+ const wa=XLSX.utils.aoa_to_sheet(anl); wa['!cols']=[{wch:14},{wch:92}]; XLSX.utils.book_append_sheet(wb,wa,'Anleitung');
+ XLSX.writeFile(wb,'Vorlage_Monatszahlen_Import.xlsx'); document.getElementById('status').textContent='✓ Vorlage „Vorlage_Monatszahlen_Import.xlsx" heruntergeladen.';
+}
 function renderMonate(){ const body=document.getElementById('monBody'); if(!body)return;
  const rows=toArrM(M.monate);
- const up=document.getElementById('monUpBtn'),gh=document.getElementById('monGhBtn');
+ const up=document.getElementById('monUpBtn'),gh=document.getElementById('monGhBtn'),tpl=document.getElementById('monTplBtn');
  if(up)up.onclick=()=>document.getElementById('file').click();
  if(gh)gh.onclick=ghSaveData;
+ if(tpl)tpl.onclick=dlMonatsVorlage;
  if(!rows.length){ body.innerHTML='<div class="src">Noch keine Monatszahlen. Fülle die Vorlage <b>Vorlage_Monatszahlen_Import.xlsx</b> aus (eine Zeile pro Monat: aller Umsatz + alle Kostenarten) und lade sie über <b>„⬆ Monats-Excel hochladen"</b> hoch — die Summen werden als Ist-Zahlen übernommen und hier als Monatsübersicht angezeigt. „☁ Ins private Repo speichern" sichert alles in deinem privaten Repository.</div>'; return; }
  const W=700,BH=150,pb=26,mx=Math.max(1,...rows.map(r=>Math.max(r.rev,r.cost)));
  const n=rows.length,gp=(W-30)/n,bw=Math.min(26,gp*0.32);
@@ -775,7 +808,7 @@ function switchTab(name){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
 
 /* ===== Events ===== */
-document.querySelectorAll('#srcSeg button').forEach(b=>b.onclick=()=>{M.src=b.dataset.src;save();renderInputs();renderAll();});
+document.querySelectorAll('#srcSeg button').forEach(b=>b.onclick=()=>{M.src=b.dataset.src;markDirty('src');save();renderInputs();renderAll();});
 document.querySelectorAll('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;renderFinanzen();});
 document.getElementById('loadPlan').onclick=()=>loadPlan(false);
 document.getElementById('planLoadBtn').onclick=()=>loadFrame(true);
@@ -789,7 +822,7 @@ document.getElementById('ghLoadBtn').onclick=()=>{if(GH.connected)ghLoadData();e
 document.getElementById('ghForget').onclick=()=>{if(!confirm('Token aus diesem Browser entfernen?'))return;GH.token='';GH.connected=false;GH.dataSha=null;ghSaveCfg();renderGithub();ghStatus('Token entfernt.');};
 ['ghOwner','ghRepo','ghBranch','ghDataPath','ghKennzahlenPath','ghEinsatzplanPath','ghToken'].forEach(id=>{const el=document.getElementById(id);const key={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDataPath:'dataPath',ghKennzahlenPath:'kennzahlenPath',ghEinsatzplanPath:'einsatzplanPath',ghToken:'token'}[id];el.oninput=()=>{GH[key]=el.value.trim();ghSaveCfg();};});
 document.getElementById('file').onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
-document.getElementById('resetBtn').onclick=()=>{if(!confirm('Alle Eingaben auf die Standard-/Ist-Werte zurücksetzen?'))return;M=Object.assign({},DEF);save();renderInputs();renderAll();renderPlanKpis();document.getElementById('status').textContent='↺ Zurückgesetzt.';};
+document.getElementById('resetBtn').onclick=()=>{if(!confirm('Alle Eingaben auf die Standard-/Ist-Werte zurücksetzen? (nur lokal — GitHub bleibt unberührt, bis du speicherst)'))return;M=Object.assign({},DEF);DIRTY.clear();save();renderInputs();renderAll();renderPlanKpis();document.getElementById('status').textContent='↺ Lokal zurückgesetzt (nichts als geändert markiert).';};
 document.getElementById('exportBtn').onclick=()=>{const R=compute(M);const out={datenquelle:M.src,eingaben:M,ergebnis:{umsatz:Math.round(R.ums),ebitda:Math.round(R.ebitda),ebit:Math.round(R.ebit),marge:+(R.marge*100).toFixed(2),verrechnungsgrad:+(R.verrech*100).toFixed(1)},stand:new Date().toISOString()};const b=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='Maintain_Kennzahlen.json';a.click();URL.revokeObjectURL(a.href);};
 document.getElementById('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':(c==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark')));};
 document.getElementById('foot').innerHTML='Maintain GmbH · Management-Cockpit · Ist-Zahlen + Finanz-Dashboard + Tourenplanung + GitHub-Sync · Token & Eingaben nur lokal im Browser (localStorage) · Daten in deinem privaten Repo · erstellt mit Claude.';
@@ -798,9 +831,9 @@ document.getElementById('foot').innerHTML='Maintain GmbH · Management-Cockpit �
 try{const sv=JSON.parse(localStorage.getItem('maintain_scenario_v1')||'null');if(sv){if(sv.SCEN)SCENL.forEach(l=>{if(sv.SCEN[l.id])SCEN[l.id]=Object.assign({},SCEN[l.id],sv.SCEN[l.id]);});if(sv.TARGET)Object.assign(TARGET,sv.TARGET);}}catch(e){}
 renderInputs();renderLevers();renderScenLevers();renderAll();renderPlanKpis();
 document.getElementById('targetMarge').value=TARGET.margeZiel;
-document.getElementById('targetMarge').oninput=e=>{TARGET.margeZiel=parseFloat(e.target.value)||0;saveScen();};
-document.getElementById('recBtn').onclick=recommend;
-document.getElementById('clearScen').onclick=()=>{SCENL.forEach(l=>SCEN[l.id].on=false);document.getElementById('recOut').innerHTML='';saveScen();renderScenLevers();renderScenario();renderFinToggle();};
+document.getElementById('targetMarge').oninput=e=>{TARGET.margeZiel=parseFloat(e.target.value)||0;markDirty('__target');saveScen();};
+document.getElementById('recBtn').onclick=()=>{markDirty('__scenario','__target');recommend();};
+document.getElementById('clearScen').onclick=()=>{SCENL.forEach(l=>SCEN[l.id].on=false);markDirty('__scenario');document.getElementById('recOut').innerHTML='';saveScen();renderScenLevers();renderScenario();renderFinToggle();};
 renderGithub();
 document.getElementById('status').textContent = GH.token ? 'GitHub-Token gefunden — verbinde…' : 'Bereit. Für Speichern/Laden im Tab „GitHub-Sync" verbinden.';
 if(location.hash&&document.querySelector('.tab[data-tab="'+location.hash.slice(1)+'"]'))switchTab(location.hash.slice(1));

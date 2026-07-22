@@ -17,11 +17,11 @@ Deine Betriebs- und Finanzkennzahlen sowie die Tourenplanung liegen in einem
 
 1. Über den GitHub-Pages-Link öffnen.
 2. Im Tab **GitHub-Sync** deinen Personal Access Token (fine-grained, *Contents: Read and write* auf das private Repo) eintragen → **Verbinden & Laden**.
-3. Zahlen eintragen oder die Excel-Vorlage `Vorlage_Monatszahlen_Import.xlsx` hochladen → **In GitHub speichern**.
+3. Zahlen eintragen oder die Excel-Vorlage `Vorlage_Monatszahlen_Import.xlsx` hochladen → **In GitHub speichern**. Beim Speichern werden nur die geänderten Felder übernommen; bereits gespeicherte Werte bleiben erhalten.
 
 Der Token bleibt nur im Browser (localStorage) und wird nie ins Repo geschrieben.
 
 ## Privates Daten-Repo
 
 Enthält `WSG_Tourenplanung.html`, `_kennzahlen_v2.json` und den (automatisch
-angelegten) Ordner `data/` mit `cockpit-data.json` und `WSG_manual_overrides.json`.
+angelegten) Ordner `data/` mit `cockpit-data.json` und dem Tourenplan-Override.
