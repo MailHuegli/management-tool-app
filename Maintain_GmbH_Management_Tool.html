@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Maintain GmbH — Management-Cockpit</title>
+<title>Dashboard</title>
 <!-- == Zugangs-Guard (Token) ============================================= -->
 <script src="config.js"></script>
 <script>
@@ -103,19 +103,12 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 <button class="themebtn" id="themebtn">◐</button>
 <div class="wrap">
 <header class="hero">
-  <div class="ey">Management-Cockpit · Ist-Zahlen · Finanzen · Szenario · Tourenplanung</div>
-  <h1>Maintain GmbH — Steuerungs-Tool</h1>
-  <p>Alle Betriebs- und Finanzkennzahlen an einem Ort: tatsächliche Ist-Zahlen (Umsatz &amp; alle Kostenarten) eintragen, Finanz-Dashboard und Tourenplanung integriert. Das Summary hebt positive und kritische Werte automatisch hervor (grün/orange/rot gegen Best-Practice-Benchmark).</p>
+  <h1>Dashboard</h1>
   <div class="toolbar">
-    <button class="btn primary" id="ghSaveTop">☁ In GitHub speichern</button>
-    <button class="btn" id="ghLoadTop">⬇ Aus GitHub laden</button>
-    <button class="btn" id="uploadBtn">⬆ Excel/CSV hochladen</button>
-    <button class="btn" id="loadPlan">⟳ Aus Tourenplanung laden</button>
-    <button class="btn" id="resetBtn">↺ Zurücksetzen</button>
-    <button class="btn" id="exportBtn">⬇ Export (Datei)</button>
-    <input type="file" id="file" accept=".csv,.xlsx,.xls,text/csv" style="display:none">
+    <button class="btn primary" id="aktTop">🔄 Aktualisieren</button>
   </div>
   <div class="status" id="status"></div>
+  <input type="file" id="file" accept=".csv,.xlsx,.xls,text/csv" style="display:none">
 </header>
 
 <nav class="tabs" id="tabs">
@@ -124,6 +117,7 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
   <button class="tab" data-tab="finanzen">Finanz-Dashboard</button>
   <button class="tab" data-tab="szenario">Szenario &amp; Ziele</button>
   <button class="tab" data-tab="planung">Tourenplanung</button>
+  <button class="tab" data-tab="objekteplan">Objekte</button>
   <button class="tab" data-tab="ferienplan">Ferienplanung</button>
   <button class="tab" data-tab="kundenverz">Kundenverzeichnis</button>
   <button class="tab" data-tab="personalplan">Personal</button>
@@ -154,6 +148,10 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
   </div>
   <h2 class="sec">Eingaben — alle Werte editierbar</h2>
   <div class="lead" id="inpLead">Umsatz, Kostenarten, Sätze, Löhne, Overhead</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px">
+    <button class="btn" id="uploadBtn">⬆ Excel/CSV hochladen</button>
+    <button class="btn" id="loadPlan">⟳ Werte aus Tourenplanung laden</button>
+  </div>
   <div id="inputGroups"></div>
 </section>
 
@@ -249,6 +247,8 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
       <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="ghLoadBtn">⬇ Von GitHub laden</button>
       <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="ghSaveBtn">⬆ In GitHub speichern</button>
       <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="ghForget">🗑 Token entfernen</button>
+      <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="resetBtn">↺ Zurücksetzen</button>
+      <button class="btn" style="border-color:var(--line);background:var(--card);color:var(--ink)" id="exportBtn">⬇ Export (Datei)</button>
     </div>
     <div class="status" id="ghStatus" style="color:var(--mut);padding:0 16px 14px;min-height:16px"></div>
   </div>
@@ -804,9 +804,10 @@ function handleExcel(f){ if(!window.XLSX){document.getElementById('status').text
 /* ===== Tabs ===== */
 /* Die vier Planungs-Reiter teilen sich EINE eingebettete Tourenplanung (ein iframe, verknüpfte Daten);
    der Reiter bestimmt nur, welche Ansicht darin gezeigt wird. */
-const PLANVIEWS={planung:'tourplan',ferienplan:'ferien',kundenverz:'kunden',personalplan:'personal'};
+const PLANVIEWS={planung:'tourplan',objekteplan:'objekte',ferienplan:'ferien',kundenverz:'kunden',personalplan:'personal'};
 const PLANTITLES={tourplan:['Tourenplanung','Jede Tour im Detail · 52 Wochen · Objekte, Arbeiten, Fahrzeuge &amp; Freitags-Briefing direkt je Tour'],
- ferien:['Ferienplanung','Abwesenheiten je Tour auf die Wochen einplanen — verknüpft mit dem Tourenplan, Daten privat'],
+ objekte:['Objekte','Alle Objekte · Tour-Zuteilung je Equipe direkt änderbar · Excel-Upload für neue oder alle Objekte'],
+ ferien:['Ferienplanung','Abwesenheiten je Tour auf die Wochen einplanen — in Ferienwochen wird die Tour geblockt'],
  kunden:['Kundenverzeichnis','Ansprechperson, E-Mail &amp; Telefon je Kunde — verknüpft mit dem Tourenplan, Daten privat'],
  personal:['Personal','Personalbedarf, FTE, Personalkosten &amp; Lohn-Benchmark — verknüpft mit dem Tourenplan, Daten privat']};
 function setPlanView(tabName){
@@ -832,9 +833,14 @@ document.querySelectorAll('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.
 document.getElementById('loadPlan').onclick=()=>loadPlan(false);
 document.getElementById('planLoadBtn').onclick=()=>loadFrame(true);
 document.getElementById('uploadBtn').onclick=()=>document.getElementById('file').click();
+/* „🔄 Aktualisieren" (Header): speichert den aktuellen Menüpunkt ins private Repo.
+   Planungs-Reiter → Tourenplanung im iframe speichern (postMessage); alle übrigen → Cockpit-Daten speichern.
+   Beim Umschalten laden die anderen Menüpunkte den gespeicherten Stand von selbst. */
+function aktTop(){ const at=document.querySelector('.tab.active'), name=at?at.dataset.tab:'';
+ if(PLANVIEWS.hasOwnProperty(name)){ try{document.getElementById('planFrame').contentWindow.postMessage({wsgSave:1},'*');}catch(e){} document.getElementById('status').textContent='🔄 Tourenplanung wird ins private Repo gespeichert …'; }
+ else { ghSaveData(); } }
+document.getElementById('aktTop').onclick=aktTop;
 /* GitHub-Sync Events */
-document.getElementById('ghSaveTop').onclick=ghSaveData;
-document.getElementById('ghLoadTop').onclick=()=>{if(GH.connected)ghLoadData();else{switchTab('github');ghStatus('Zuerst verbinden.',true);}};
 document.getElementById('ghConnectBtn').onclick=()=>ghConnect(false);
 document.getElementById('ghSaveBtn').onclick=ghSaveData;
 document.getElementById('ghLoadBtn').onclick=()=>{if(GH.connected)ghLoadData();else ghConnect(false);};
@@ -844,7 +850,7 @@ document.getElementById('file').onchange=e=>{if(e.target.files[0])handleFile(e.t
 document.getElementById('resetBtn').onclick=()=>{if(!confirm('Alle Eingaben auf die Standard-/Ist-Werte zurücksetzen? (nur lokal — GitHub bleibt unberührt, bis du speicherst)'))return;M=Object.assign({},DEF);DIRTY.clear();save();renderInputs();renderAll();renderPlanKpis();document.getElementById('status').textContent='↺ Lokal zurückgesetzt (nichts als geändert markiert).';};
 document.getElementById('exportBtn').onclick=()=>{const R=compute(M);const out={datenquelle:M.src,eingaben:M,ergebnis:{umsatz:Math.round(R.ums),ebitda:Math.round(R.ebitda),ebit:Math.round(R.ebit),marge:+(R.marge*100).toFixed(2),verrechnungsgrad:+(R.verrech*100).toFixed(1)},stand:new Date().toISOString()};const b=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='Maintain_Kennzahlen.json';a.click();URL.revokeObjectURL(a.href);};
 document.getElementById('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':(c==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark')));};
-document.getElementById('foot').innerHTML='Maintain GmbH · Management-Cockpit · Ist-Zahlen + Finanz-Dashboard + Tourenplanung + GitHub-Sync · Token & Eingaben nur lokal im Browser (localStorage) · Daten in deinem privaten Repo · erstellt mit Claude.';
+document.getElementById('foot').innerHTML='Dashboard · Finanz-Dashboard + Tourenplanung · Token &amp; Eingaben nur lokal im Browser (localStorage) · Daten in deinem privaten Repo.';
 
 /* ===== Init ===== */
 try{const sv=JSON.parse(localStorage.getItem('maintain_scenario_v1')||'null');if(sv){if(sv.SCEN)SCENL.forEach(l=>{if(sv.SCEN[l.id])SCEN[l.id]=Object.assign({},SCEN[l.id],sv.SCEN[l.id]);});if(sv.TARGET)Object.assign(TARGET,sv.TARGET);}}catch(e){}
