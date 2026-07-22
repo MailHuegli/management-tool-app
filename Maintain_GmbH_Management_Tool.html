@@ -124,6 +124,9 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
   <button class="tab" data-tab="finanzen">Finanz-Dashboard</button>
   <button class="tab" data-tab="szenario">Szenario &amp; Ziele</button>
   <button class="tab" data-tab="planung">Tourenplanung</button>
+  <button class="tab" data-tab="ferienplan">Ferienplanung</button>
+  <button class="tab" data-tab="kundenverz">Kundenverzeichnis</button>
+  <button class="tab" data-tab="personalplan">Personal</button>
   <button class="tab" data-tab="benchmark">Benchmark</button>
   <button class="tab" data-tab="github">GitHub-Sync</button>
 </nav>
@@ -199,8 +202,8 @@ iframe.plan{width:100%;height:1500px;border:1px solid var(--line);border-radius:
 
 <!-- PLANUNG -->
 <section class="tabpane" data-pane="planung">
-  <h2 class="sec">Tourenplanung</h2>
-  <div class="lead">Jede Tour im Detail · 52 Wochen · alles direkt anpassbar: Objekte, Arbeiten, Frequenzen, Kapazität &amp; Arbeitszeiten</div>
+  <h2 class="sec" id="planTitle">Tourenplanung</h2>
+  <div class="lead" id="planLead">Jede Tour im Detail · 52 Wochen · alles direkt anpassbar: Objekte, Arbeiten, Frequenzen, Kapazität &amp; Arbeitszeiten</div>
   <div class="kpis" id="planKpis" style="margin-bottom:14px"></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <button class="btn primary" style="background:var(--brand);border-color:var(--brand);color:#fff" id="planLoadBtn">⟳ Laden</button>
@@ -659,17 +662,19 @@ function renderGithub(){
  if(info)info.innerHTML='<b>So richtest du den Token ein:</b><ol class="clean" style="margin-top:6px"><li>GitHub → dein Profil → <b>Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token</b>.</li><li><b>Resource owner:</b> dein Konto · <b>Repository access:</b> „Only select repositories" → <b>'+GH.repo+'</b>.</li><li><b>Permissions → Repository permissions → Contents: Read and write</b>. Ablaufdatum setzen.</li><li>Token generieren, kopieren, oben einfügen → <b>Verbinden & Laden</b>. Der Token bleibt nur in diesem Browser (localStorage) und wird nie ins Repo geschrieben.</li></ol>';
 }
 
-/* ===== Tourenplanung ===== */
-let planLoaded=false;
-async function loadFrame(force){
+/* ===== Tourenplanung (ein iframe für alle 4 Planungs-Reiter, Ansicht per postMessage) ===== */
+let planLoaded=false, planWantView='tourplan';
+async function loadFrame(force,view){
+ if(view)planWantView=view;
  const f=document.getElementById('planFrame'), msg=document.getElementById('planMsg'), openBtn=document.getElementById('planOpenBtn');
- if(f.dataset.loaded==='1' && !force) return;
+ const postView=()=>{ try{ f.contentWindow.postMessage({wsgView:planWantView},'*'); }catch(e){} };
+ if(f.dataset.loaded==='1' && !force){ postView(); return; }   // schon geladen → nur Ansicht umschalten
  const showMsg=h=>{msg.style.display='block';msg.innerHTML=h;f.style.display='none';openBtn.disabled=true;f.dataset.loaded='';};
- const showFrame=url=>{f.setAttribute('src',url);f.style.display='';msg.style.display='none';f.dataset.loaded='1';planLoaded=true;openBtn.disabled=false;openBtn.onclick=()=>window.open(url,'_blank');};
+ const showFrame=url=>{f.onload=()=>{postView();};f.setAttribute('src',url+'#view='+planWantView);f.style.display='';msg.style.display='none';f.dataset.loaded='1';planLoaded=true;openBtn.disabled=false;openBtn.onclick=()=>window.open(url+'#view='+planWantView,'_blank');};
  const path=GH.einsatzplanPath;
- if(!(GH.connected&&GH.token)){ showMsg('Die Tourenplanung liegt in deinem <b>privaten</b> Repo. Verbinde dich zuerst im Tab <b>„GitHub-Sync"</b> — dann wird sie hier geladen.'); return; }
+ if(!(GH.connected&&GH.token)){ showMsg('Die Planung liegt in deinem <b>privaten</b> Repo. Verbinde dich zuerst im Tab <b>„GitHub-Sync"</b> — dann wird sie hier geladen.'); return; }
  if(!path){ showMsg('Kein Pfad für die Tourenplanung gesetzt (config.js / GitHub-Sync).'); return; }
- showMsg('Lade Tourenplanung aus '+GH.repoName+' …');
+ showMsg('Lade Planung aus '+GH.repoName+' …');
  try{ const file=await ghGetFile(path);
   if(file){ const blob=new Blob([file.text],{type:'text/html'}); showFrame(URL.createObjectURL(blob)); return; }
   showMsg('⚠ Tourenplanung nicht gefunden unter <b>'+path+'</b> in '+GH.repoName+'.<br>→ Datei ins private Repo laden oder Pfad im Tab „GitHub-Sync" anpassen.');
@@ -797,10 +802,24 @@ function handleExcel(f){ if(!window.XLSX){document.getElementById('status').text
  rd.readAsArrayBuffer(f);}
 
 /* ===== Tabs ===== */
+/* Die vier Planungs-Reiter teilen sich EINE eingebettete Tourenplanung (ein iframe, verknüpfte Daten);
+   der Reiter bestimmt nur, welche Ansicht darin gezeigt wird. */
+const PLANVIEWS={planung:'tourplan',ferienplan:'ferien',kundenverz:'kunden',personalplan:'personal'};
+const PLANTITLES={tourplan:['Tourenplanung','Jede Tour im Detail · 52 Wochen · Objekte, Arbeiten, Fahrzeuge &amp; Freitags-Briefing direkt je Tour'],
+ ferien:['Ferienplanung','Abwesenheiten je Tour auf die Wochen einplanen — verknüpft mit dem Tourenplan, Daten privat'],
+ kunden:['Kundenverzeichnis','Ansprechperson, E-Mail &amp; Telefon je Kunde — verknüpft mit dem Tourenplan, Daten privat'],
+ personal:['Personal','Personalbedarf, FTE, Personalkosten &amp; Lohn-Benchmark — verknüpft mit dem Tourenplan, Daten privat']};
+function setPlanView(tabName){
+ const v=PLANVIEWS[tabName]||'tourplan', T=PLANTITLES[v];
+ const h=document.getElementById('planTitle'), l=document.getElementById('planLead'); if(h)h.textContent=T[0]; if(l)l.innerHTML=T[1];
+ const kp=document.getElementById('planKpis'); if(kp)kp.style.display=(v==='tourplan')?'':'none';
+ loadFrame(false,v);
+}
 function switchTab(name){
+ const isPlan=PLANVIEWS.hasOwnProperty(name), pane=isPlan?'planung':name;
  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
- document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name));
- if(name==='planung'){loadFrame();renderPlanKpis();}
+ document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===pane));
+ if(isPlan){setPlanView(name);renderPlanKpis();}
  if(name==='finanzen')renderFinanzen();
  if(name==='github')renderGithub();
  location.hash=name;
