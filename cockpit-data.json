@@ -1,0 +1,58 @@
+{
+  "istUR": 820000,
+  "istTH": 340000,
+  "istGR": 190000,
+  "istGarten": 410000,
+  "istWinter": 95000,
+  "istUebrig": 70000,
+  "kPersonal": 1180000,
+  "kGF": 150000,
+  "kFahrzeug": 120000,
+  "kMaterial": 110000,
+  "kWinter": 35000,
+  "kVerwaltung": 130000,
+  "kAbschreibung": 60000,
+  "kSonstige": 55000,
+  "over": {
+    "istUR": true,
+    "istTH": true,
+    "istGR": true,
+    "istGarten": true,
+    "istWinter": true,
+    "istUebrig": true,
+    "kPersonal": true,
+    "kGF": true,
+    "kFahrzeug": true,
+    "kMaterial": true,
+    "kWinter": true,
+    "kVerwaltung": true,
+    "kAbschreibung": true,
+    "kSonstige": true
+  },
+  "rates": {
+    "ur": 45,
+    "gr": 55,
+    "th": 82,
+    "bs": 98,
+    "ga": 75,
+    "win": 90,
+    "hw": 70,
+    "obj": 66
+  },
+  "wages": {
+    "tag": 5700,
+    "garten": 5300,
+    "abend": 4500,
+    "admin": 6300
+  },
+  "social": 20,
+  "mwst": 8.1,
+  "monate": null,
+  "gebaeude": null,
+  "sc": {
+    "preis": 0,
+    "wachs": 0,
+    "verr": 0,
+    "ziel": 8
+  }
+}
