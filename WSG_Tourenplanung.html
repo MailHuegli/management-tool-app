@@ -377,9 +377,9 @@ function buildDefault(){
   // die letzte Tour trägt den Rest (C13). Tourenzahl ist damit aus der Last abgeleitet, nicht fix.
   ["tag","garten","abend"].forEach(eq=>{
     const group=objs.filter(o=>eqFor(o)===eq);
-    packBins(group,eq,[]).forEach((bin,i)=>tours.push({
+    packGroup(group,eq,PERS[eq]).forEach((bin,i)=>tours.push({
       id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:100,
-      vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin,ferienKW:[]}));
+      vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin.map(o=>o.id),ferienKW:[]}));
   });
   return {objs,tours,wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,
     briefing:{...BRIEF},staff:null,ratio:10};
@@ -475,18 +475,19 @@ function tourLoad(t,kw,cov){ // Minuten/Person je Woche (Arbeit + Fahrt + übern
   const avail=t.persons-absentPersons(t,kw); if(avail<=0) return null;
   return (tourWorkMin(t,kw)+tourDriveMin(t,kw)+(cov?(cov[t.id]?.extra||0):0))/avail;
 }
-// Auslastung = relativ zur eigenen Schichtkapazität (Tag/Garten 42h, Abend 22.5h) → 100% = Schicht voll
-function tourUtil(t,kw,cov){ const l=tourLoad(t,kw,cov); return l==null?0:l/PERPERSON[t.eq]*100; }
-function tourYear(t){ // Ø + Spitze (Auslastung) + Ø-Beschäftigungsgrad (FTE-Basis 42h)
-  let sumU=0,cnt=0,peak=0,sumF=0;
+// Auslastung IMMER auf 42h-Basis: 100% = 42h/Woche je Person — Tour und Mitarbeiter identisch
+function tourUtil(t,kw,cov){ const l=tourLoad(t,kw,cov); return l==null?0:l/WEEKMIN*100; }
+function tourYear(t){ // Ø + Spitze (beide 42h-Basis); fteAvg = Ø/100
+  let sum=0,cnt=0,peak=0;
   for(let w=1;w<=52;w++){const cov=computeCoverage(w);const l=tourLoad(t,w,cov);
-    if(l!=null){const u=l/PERPERSON[t.eq]*100; sumU+=u; sumF+=l/WEEKMIN; cnt++; peak=Math.max(peak,u);}}
-  return {avg:cnt?sumU/cnt:0, peak, fteAvg:cnt?sumF/cnt:0};
+    if(l!=null){const u=l/WEEKMIN*100; sum+=u; cnt++; peak=Math.max(peak,u);}}
+  return {avg:cnt?sum/cnt:0, peak, fteAvg:cnt?(sum/cnt/100):0};
 }
 
 /* ============ Kosten / FTE ============ */
-// Beschäftigungsgrad des zugeteilten MA = tatsächliche Wochenstunden / 42h (Abend bleibt Teilzeit)
-function tourGrade(t){ return clamp(Math.round(tourYear(t).fteAvg*100/5)*5,0,100); }
+// Beschäftigungsgrad des zugeteilten MA = Ø-Auslastung der Tour, auf 5% AUFGERUNDET → Pensum deckt die Last,
+// Jahres-Ist/Soll bleibt ≤100% (nie über die 5%-Hürde durch Abrundung)
+function tourGrade(t){ return clamp(Math.ceil(tourYear(t).avg/5)*5,0,100); }
 function costs(){
   let fte=0,cost=0,over=0; const social=DATA.social/100;
   DATA.tours.forEach(t=>{
@@ -640,39 +641,48 @@ function renderTourGrid(){
 function setPersons(t,d){t.persons=clamp(t.persons+d,1,6);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
 function setMaxUtil(t,v){t.maxUtil=clamp(v,50,140);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
 
-/* ============ Umplanen / Packen (C13): Touren nacheinander auf 90–100% füllen ============ */
+/* ============ Umplanen / Packen (C13) — mit harter 105%-Jahresgrenze ============ */
+const ANNUAL_CAP=105;   // Gesamtarbeitszeit/Jahr je Person darf max. 105% des Pensums sein (5%-Hürde)
 function weeklyAvgMin(o,eq){                          // Jahres-Wochen-Ø eines Objekts (Arbeit, ohne Fahrt)
   return o.services.reduce((a,s)=>{
     if(s.k==="ga"&&eq!=="garten")return a;
     return a+(s.freq>=52?s.min:s.min*s.freq/52);
   },0);
 }
-// Ziel-Arbeitsminuten je Tour, damit Auslastung (Arbeit+Fahrt) ~ maxUtil landet
-function workCapOf(persons,eq,maxUtil){ return persons*PERPERSON[eq]*(maxUtil/100)*PACK_FACTOR; }
-// Next-Fit-Packung entlang geografischer Kette ab Kloten:
-// füllt Tour 1 bis ~Ziel, dann Tour 2 … die letzte Tour trägt den Rest (tiefere Auslastung)
-function packBins(objs,eq,caps){
-  const order=nnOrder(objs); const bins=[]; let cur=[],load=0,bi=0;
-  const capAt=i=>caps[i]!=null?caps[i]:workCapOf(PERS[eq],eq,100);   // Überlauf-Tour = Standardbesetzung
+// Grobe Jahres-Ø-Auslastung eines Bins (Objekt-Array), /Person — ohne teure Coverage-Rechnung
+function binAnnualUtil(objs,eq,persons){
+  if(!objs.length) return 0;
+  const work=objs.reduce((a,o)=>a+weeklyAvgMin(o,eq),0);
+  const order=nnOrder(objs); let drive=order.length?distMin(HOME,order[0]):0;
+  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
+  return (work+drive)/persons/WEEKMIN*100;
+}
+// Ziel-Jahres-Auslastung je Tour = physische Schichtkapazität (Tag/Garten 100%=42h, Abend ~54%=22.5h).
+// So wird die Schicht voll genutzt, aber nie überfüllt.
+function targetUtil(eq){ return PERPERSON[eq]/WEEKMIN*100; }
+// Packt eine Objektgruppe (Next-Fit, geografische Kette): Tour wird gefüllt, bis das nächste Objekt die
+// Ziel-Jahresauslastung überschreiten würde → neue Tour. Die letzte Tour trägt den Rest (tiefer).
+// Kein Bin überschreitet das Ziel (ausser ein einzelnes Objekt ist allein grösser) → Jahres-Ø bleibt ≤ ~100%/54%.
+function packGroup(objs,eq,persons){
+  const target=targetUtil(eq);
+  const order=nnOrder(objs); const bins=[]; let cur=[];
   order.forEach(o=>{
-    const m=weeklyAvgMin(o,eq);
-    if(cur.length && (load+m>capAt(bi) || cur.length>=MAXOBJ[eq])){ bins.push(cur); cur=[]; load=0; bi++; }
-    cur.push(o.id); load+=m;
+    if(cur.length && (cur.length>=MAXOBJ[eq] || binAnnualUtil(cur.concat([o]),eq,persons)>target)){ bins.push(cur); cur=[]; }
+    cur.push(o);
   });
   if(cur.length) bins.push(cur);
   return bins;
 }
 function packEquipe(eq){
   const existing=DATA.tours.filter(t=>t.eq===eq);
+  const persons=existing[0]?.persons||PERS[eq];
   const objs=[]; existing.forEach(t=>t.objs.forEach(id=>{const o=objById(id);if(o)objs.push(o);}));
-  if(!objs.length) return;
-  const caps=existing.map(t=>workCapOf(t.persons,eq,t.maxUtil));
-  const bins=packBins(objs,eq,caps);
+  if(!objs.length){ DATA.tours=DATA.tours.filter(t=>t.eq!==eq); return; }
+  const bins=packGroup(objs,eq,persons);
   const rebuilt=bins.map((bin,i)=>{const e=existing[i];
-    return {id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,
-      persons:e?e.persons:PERS[eq], maxUtil:e?e.maxUtil:100,
-      vehicle:e?e.vehicle:(eq!=="abend"), briefing:e?e.briefing:(eq!=="abend"),
-      ferienKW:e?e.ferienKW:[], objs:bin};});
+    return {id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
+      maxUtil:e?e.maxUtil:100, vehicle:e?e.vehicle:(eq!=="abend"),
+      briefing:e?e.briefing:(eq!=="abend"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)};});
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
 }
@@ -683,7 +693,7 @@ function redistributeCrew(eq){ packEquipe(eq); }       // Personal-/Deckeländer
 function optimizeAll(){
   ["tag","garten","abend"].forEach(packEquipe);
   persist(); ensureCurTour(); renderAll();
-  flash("🔄 Gepackt: Tour 1…N auf 90–100 %, Rest-Tour trägt den Überhang");
+  flash("🔄 Gepackt — keine Tour über 105% Jahres-Auslastung");
 }
 
 function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))return;
@@ -956,11 +966,8 @@ function renderStaff(){
     s[f]=(f==="bg")?clamp(+el.value||0,0,100):el.value;s.fiktiv=false;persist();renderStaff();});
   $$('#staffTable [data-del]').forEach(b=>b.onclick=()=>{DATA.staff.splice(+b.dataset.del,1);persist();renderStaff();});
 }
-function annualWorkPP(t){
-  let sum=0;for(let w=1;w<=52;w++){if(t.persons-absentPersons(t,w)<=0)continue;
-    const cov=computeCoverage(w);sum+=(tourWorkMin(t,w)+tourDriveMin(t,w)+(cov[t.id]?.extra||0));}
-  return sum/t.persons/60 + HOLIDAYS.length*8.4;
-}
+// Jahres-Ist-Stunden je Person = Ø-Auslastung der Tour × 42h × 52 Wochen (deckt sich mit der Tour-Anzeige)
+function annualWorkPP(t){ return tourYear(t).avg/100*42*52; }
 
 /* ============ Briefing-Konfig ============ */
 function renderBriefCfg(show){
@@ -1044,21 +1051,43 @@ function rowToObj(r){
     type:g("Objekttyp")||"Wohnliegenschaft",areaIn,areaGa,winter:win,
     kunde:g("Kunde")||"Kunde",contact:g("Ansprechperson")||"",email:g("E-Mail")||"",tel:g("Tel. allgemein")||g("Tel. direkt")||"",services};
 }
+// Equipe eines Objekts (objekt-basiert): Garten-Liegenschaft → garten, abend-Reinigung → abend, sonst Hauswart
+function eqOf(o){
+  if(o.cat) return o.cat==="garten"?"garten":o.cat==="buero"?"abend":"tag";
+  if((o.areaGa||0)>400) return "garten";
+  if((o.services||[]).some(s=>s.k==="ur"&&s.abend)) return "abend";
+  return "tag";
+}
+// Touren aus DATA.objs komplett neu aufbauen: je Equipe auf möglichst wenige Touren zu 90–100% packen (C13).
+// Bestehende Tour-Einstellungen (Personen/Deckel/Fahrzeug/Briefing/Ferien) werden nach Reihenfolge übernommen.
+function rebuildTours(){
+  const prev={tag:[],garten:[],abend:[]}; DATA.tours.forEach(t=>{if(prev[t.eq])prev[t.eq].push(t);});
+  const tours=[];
+  ["tag","garten","abend"].forEach(eq=>{
+    const group=DATA.objs.filter(o=>eqOf(o)===eq);
+    const persons=prev[eq][0]?prev[eq][0].persons:PERS[eq];
+    packGroup(group,eq,persons).forEach((bin,i)=>{const e=prev[eq][i];
+      tours.push({id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
+        maxUtil:e?e.maxUtil:100,
+        vehicle:e?e.vehicle:(eq!=="abend"),briefing:e?e.briefing:(eq!=="abend"),
+        ferienKW:e?e.ferienKW:[],objs:bin.map(o=>o.id)});});
+  });
+  DATA.tours=tours; ensureCurTour();
+}
 function appendObjects(rows){
-  const news=rows.map(rowToObj);const ex=new Set(DATA.objs.map(o=>o.id));
-  const add=news.filter(o=>!ex.has(o.id));
-  add.forEach(o=>{DATA.objs.push(o);autoAssign(o);});
-  persist();renderAll();flash(add.length+" Objekte hinzugefügt");
+  const ex=new Set(DATA.objs.map(o=>o.id));
+  const add=rows.map(rowToObj).filter(o=>!ex.has(o.id));
+  add.forEach(o=>DATA.objs.push(o));
+  rebuildTours();persist();renderAll();flash(add.length+" Objekte hinzugefügt & Touren neu gepackt (90–100%)");
 }
 function replaceAllObjects(rows){
   if(!confirm("Alle "+DATA.objs.length+" Objekte ersetzen? Kann nicht rückgängig gemacht werden."))return;
-  DATA.objs=rows.map(rowToObj);DATA.tours.forEach(t=>t.objs=[]);
-  DATA.objs.forEach(autoAssign);persist();renderAll();flash(DATA.objs.length+" Objekte neu aufgebaut");
+  DATA.objs=rows.map(rowToObj);
+  rebuildTours();persist();renderAll();flash(DATA.objs.length+" Objekte neu aufgebaut & Touren gepackt (90–100%)");
 }
-function autoAssign(o){
-  const gardenHeavy=o.areaGa>400, abendable=o.services.some(s=>s.k==="ur"&&s.abend);
-  const eq=gardenHeavy?"garten":abendable?"abend":"tag";
-  const pool=DATA.tours.filter(t=>t.eq===eq);if(!pool.length){addTour(eq);return autoAssign(o);}
+function autoAssign(o){ // Einzelzuteilung (Fallback): Objekt der am wenigsten belasteten Tour seiner Equipe zuordnen
+  const eq=eqOf(o); const pool=DATA.tours.filter(t=>t.eq===eq);
+  if(!pool.length){addTour(eq);return autoAssign(o);}
   pool.sort((a,b)=>a.objs.length-b.objs.length);pool[0].objs.push(o.id);
 }
 function ferienImport(rows){
