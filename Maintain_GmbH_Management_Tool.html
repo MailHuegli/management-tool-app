@@ -138,7 +138,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726a#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -644,7 +644,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260726a#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();

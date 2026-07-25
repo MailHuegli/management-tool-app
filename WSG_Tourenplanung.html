@@ -608,12 +608,14 @@ function renderTourGrid(){
     const card=document.createElement("div");
     card.className="tourcard"+(curTour===t.id?" sel":"");
     card.dataset.tour=t.id;
-    const cls=y.avg>100?"bad":y.avg>90?"":"warn";
+    // Balkenbreite = Ø-Auslastung (max 100% visuell). Farbe: rot >105 (über Jahres-Hürde), grün 80–105, orange <80
+    const cls=y.avg>105?"bad":y.avg>=80?"":"warn";
+    const barW=clamp(y.avg,0,100);
     card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
       <div class="row muted">${t.objs.length} Objekte · ${t.persons} P</div>
-      <div class="bar ${cls}"><i style="width:${clamp(y.avg,0,140)/1.4}%"></i></div>
-      <div class="row" style="font-size:12px"><span class="${y.avg>100?'over':y.avg>90?'good':'mid'}">Ø ${nf(y.avg)}%</span>
-        <span class="muted">· Spitze ${nf(y.peak)}%</span></div>
+      <div class="bar ${cls}"><i style="width:${barW}%"></i></div>
+      <div class="row" style="font-size:12px"><span class="${y.avg>105?'over':y.avg>=80?'good':'mid'}">Ø ${nf(y.avg)}%</span>
+        <span class="${y.peak>110?'over':'muted'}">· Spitze ${nf(y.peak)}%</span></div>
       <div class="row">
         <button class="sm" data-p="-1">−</button><span>${t.persons} P</span><button class="sm" data-p="1">+</button>
         <label class="chk">max% <input type="number" class="maxu" value="${t.maxUtil}" style="width:56px"></label>
