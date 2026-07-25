@@ -336,9 +336,14 @@ function emptyBanner(){return `<div class="card" style="text-align:center;paddin
   Deine Betriebs- und Finanzkennzahlen liegen im <b>privaten Repo</b> und werden über deinen GitHub-Token geladen.</p>
   <div class="row" style="justify-content:center">
     <button class="sm" onclick="loadDemoCockpit()">▶ Demodaten laden (lokal)</button>
-    <button class="sm" onclick="downloadDemoCockpit()">⬇ Demodaten als JSON</button>
+    <button class="sm primary" onclick="demoCockpitToRepo()">⬆ Demodaten ins private Repo schreiben</button>
     <button class="sm" onclick="switchTab('github')">🔑 Token hinterlegen</button></div></div>`;}
-function loadDemoCockpit(){M=structuredClone(DEMO);save();renderActive();status("💾 Demodaten geladen (lokal)");flash("Demodaten geladen");}
+function loadDemoCockpit(){M=structuredClone(DEMO);ALLKEYS.forEach(markDirty);markDirty('over');markDirty('rates');markDirty('sc');save();renderActive();status("💾 Demodaten geladen (lokal)");flash("Demodaten geladen");}
+async function demoCockpitToRepo(){   // Regel 2: Demo-Kennzahlen ins private Repo schreiben
+  const g=gh(); if(!g.token||!g.owner||!g.repo){flash("⚠ Erst Token → GitHub-Sync hinterlegen");return;}
+  if(!confirm("Demo-Kennzahlen ins private Repo schreiben?\nÜberschreibt data/cockpit-data.json."))return;
+  loadDemoCockpit(); await ghSaveData();
+}
 function downloadDemoCockpit(){const b=new Blob([JSON.stringify(DEMO,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="cockpit-data.json";a.click();
   flash("cockpit-data.json heruntergeladen – ins private Repo unter data/ legen");}
@@ -411,7 +416,7 @@ function renderEingaben(){
       <td class="n">${chf(rate*hrs)}</td></tr>`;});
   $("#catTable").innerHTML=h+"</tbody>";
   $("#catSum").textContent=bh?("Umsatz aus Touren "+chf(CATALOG.reduce((a,c)=>a+M.rates[c[0]]*((bh&&CAT2TOUR[c[0]])?bh[CAT2TOUR[c[0]]]:0),0))):"kein Tourenplan geladen";
-  $$('#catTable [data-rate]').forEach(i=>i.onchange=()=>{M.rates[i.dataset.rate]=+i.value||0;save();renderEingaben();renderActive();});
+  $$('#catTable [data-rate]').forEach(i=>i.onchange=()=>{M.rates[i.dataset.rate]=+i.value||0;markDirty('rates');save();renderEingaben();renderActive();});
   // Berechnungsbasis-Hinweis
   $("#staffInputs").innerHTML=`<p class="muted" style="font-size:13px;margin:0 0 6px">
     <b>Umsatz</b> = verrechenbare Stunden aus dem Tourenplan × Satz (oben).
@@ -427,8 +432,8 @@ function renderEingaben(){
   t+=`<tr><td colspan="4" class="muted band">Umsatz</td></tr>`; REV_ROWS.forEach(r=>t+=row(r[0],r[1],r[2],"rev"));
   t+=`<tr><td colspan="4" class="muted band">Kosten</td></tr>`; COST_ROWS.forEach(r=>t+=row(r[0],r[1],r[2],"cost"));
   $("#istInputs").innerHTML=t+"</tbody></table>";
-  $$('#istInputs [data-ov]').forEach(c=>c.onchange=()=>{M.over=M.over||{};M.over[c.dataset.ov]=c.checked;save();renderEingaben();renderActive();});
-  $$('#istInputs [data-val]').forEach(i=>i.onchange=()=>{M[i.dataset.val]=+i.value||0;save();renderActive();});
+  $$('#istInputs [data-ov]').forEach(c=>c.onchange=()=>{M.over=M.over||{};M.over[c.dataset.ov]=c.checked;markDirty('over');markDirty(c.dataset.ov);save();renderEingaben();renderActive();});
+  $$('#istInputs [data-val]').forEach(i=>i.onchange=()=>{M[i.dataset.val]=+i.value||0;markDirty(i.dataset.val);save();renderActive();});
 }
 
 /* ---- Finanz-Dashboard ---- */
@@ -583,6 +588,8 @@ async function ghReq(method,path,body){
   return r.json();
 }
 async function ghSaveData(){
+  const g0=gh(); if(!g0.token||!g0.owner||!g0.repo){status("⚠ Kein Token/Repo");flash("⚠ Kein Token/Repo hinterlegt");return;}
+  if(isEmptyCockpit()&&!DIRTY.size){flash("⚠ Nichts zu speichern");return;}   // Schutz: nicht leer über echte Daten schreiben
   status("speichere Cockpit-Daten…");
   try{const g=gh();
     const put=async(sha)=>{
@@ -661,7 +668,7 @@ function wire(){
   $$('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;$$('#finSeg button').forEach(x=>x.classList.toggle("on",x===b));renderFinanzen();});
   ["Preis","Wachs","Verr","Ziel"].forEach(s=>{const el=$("#s"+s);el.oninput=()=>{
     M.sc.preis=+$("#sPreis").value;M.sc.wachs=+$("#sWachs").value;M.sc.verr=+$("#sVerr").value;M.sc.ziel=+$("#sZiel").value;
-    save();renderSzenario();};});
+    markDirty('sc');save();renderSzenario();};});
   $("#btnTplMonat").onclick=tplMonat;$("#btnTplList").onclick=tplList;
   $("#fileMonat").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyMonate);e.target.value="";};
   $("#fileList").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyList);e.target.value="";};
