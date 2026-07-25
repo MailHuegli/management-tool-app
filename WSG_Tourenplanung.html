@@ -1075,8 +1075,31 @@ function persist(){try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
 function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
 function isEmpty(){return (!DATA.objs||!DATA.objs.length)&&(!DATA.tours||!DATA.tours.length);}
+// Geladene Daten reparieren: fehlende/ungültige Felder auffüllen (schützt vor alten/teilweisen Dateien → kein Absturz)
+function normalizePlan(d){
+  if(!d||typeof d!=="object") return emptyPlan();
+  d.objs = Array.isArray(d.objs) ? d.objs.filter(o=>o&&o.id) : [];
+  d.objs.forEach(o=>{ if(!Array.isArray(o.services)) o.services=[]; });
+  const ids = new Set(d.objs.map(o=>o.id));
+  d.tours = Array.isArray(d.tours) ? d.tours.filter(t=>t&&t.eq&&EQ[t.eq]) : [];
+  d.tours.forEach(t=>{
+    t.objs = Array.isArray(t.objs) ? t.objs.filter(id=>ids.has(id)) : [];
+    t.ferienKW = Array.isArray(t.ferienKW) ? t.ferienKW : [];
+    if(typeof t.persons!=="number") t.persons = PERS[t.eq]||1;
+    if(typeof t.maxUtil!=="number") t.maxUtil = 100;
+    if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend");
+    if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend");
+    if(!t.id) t.id = EQ[t.eq].short+"?";
+  });
+  d.wages = (d.wages&&typeof d.wages==="object") ? {...WAGES_DEF,...d.wages} : {...WAGES_DEF};
+  if(typeof d.social!=="number") d.social = SOCIAL_DEF;
+  if(typeof d.fzkost!=="number") d.fzkost = FZKOST_DEF;
+  if(typeof d.ratio!=="number") d.ratio = 10;
+  if(!Array.isArray(d.staff)) d.staff = null;
+  return d;
+}
 function load(){
-  try{const s=localStorage.getItem("wsg_plan_v4");if(s){DATA=JSON.parse(s);
+  try{const s=localStorage.getItem("wsg_plan_v4");if(s){DATA=normalizePlan(JSON.parse(s));
     if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};return;}}catch(e){}
   DATA=emptyPlan();   // leer starten — echte Daten kommen aus dem privaten Repo (Token)
 }
@@ -1121,7 +1144,7 @@ async function ghLoadPlan(){
   const g=gh(); if(!g.token||!g.owner||!g.repo){setSource("empty");flash("⚠ Kein Token/Repo hinterlegt");return;}
   setSource("laden");
   try{const cur=await ghGet("data/WSG_plan_override.json");
-    if(cur.json){DATA=cur.json;if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};curTour=DATA.tours[0]?.id;persist();renderAll();setSource("privat");flash("☁ Tourendaten aus privatem Repo geladen");}
+    if(cur.json){DATA=normalizePlan(cur.json);if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};curTour=DATA.tours[0]?.id;persist();renderAll();setSource("privat");flash("☁ Tourendaten aus privatem Repo geladen");}
     else if(cur.status===404){setSource("leer");flash("⚠ data/WSG_plan_override.json NICHT gefunden in "+g.owner+"/"+g.repo+" (Branch "+(g.branch||"main")+") — Pfad/Branch prüfen");}
     else{setSource("fehler","unlesbar");flash("⚠ Datei gefunden, aber Inhalt nicht lesbar (kein gültiges JSON)");}}
   catch(e){setSource("fehler",e.message);flash("⚠ GitHub: "+e.message);}
@@ -1215,7 +1238,7 @@ async function ghAutoLoad(){
   setSource("laden");
   try{
     const cur=await ghGet("data/WSG_plan_override.json");
-    if(cur.json){ DATA=cur.json; if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};
+    if(cur.json){ DATA=normalizePlan(cur.json); if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};
       curTour=DATA.tours[0]?.id; persist(); renderAll(); setSource("privat");
       flash("☁ Tourendaten aus privatem Repo geladen"); }
     else if(cur.status===404) setSource("leer","data/WSG_plan_override.json nicht gefunden (Branch "+(g.branch||"main")+")");
