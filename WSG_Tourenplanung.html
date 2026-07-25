@@ -1070,7 +1070,8 @@ function ferienImport(rows){
 }
 
 /* ============ Persistenz: localStorage + GitHub ============ */
-function persist(){try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}}
+function persist(){try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
+  try{window.parent&&window.parent!==window&&window.parent.postMessage({wsgDataChanged:1},"*");}catch(e){}}
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
 function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
 function isEmpty(){return (!DATA.objs||!DATA.objs.length)&&(!DATA.tours||!DATA.tours.length);}
@@ -1086,18 +1087,24 @@ function resetDefault(){DATA=emptyPlan();curTour=null;persist();renderAll();flas
 function gh(){try{return JSON.parse(localStorage.getItem("maintain_github")||"{}");}catch(e){return{};}}
 async function ghGet(path){
   const g=gh();if(!g.token)throw new Error("Kein PAT");
-  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}?ref=${g.branch||"main"}`,
-    {headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"}});
+  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}?ref=${g.branch||"main"}&t=${Date.now()}`,
+    {cache:"no-store",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"}});
   if(r.status===404)return{sha:null,json:null};
   if(!r.ok)throw new Error("GET "+r.status);
-  const j=await r.json();return{sha:j.sha,json:JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,"")))))};
+  const j=await r.json();
+  let json=null; try{ if(j.content) json=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,""))))); }catch(e){ json=null; } // leere/ungültige Datei → als leer behandeln
+  return {sha:j.sha||null,json};
 }
 async function ghPut(path,obj,sha){
   const g=gh();
-  const body={message:"WSG plan update",content:btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))),branch:g.branch||"main"};
-  if(sha)body.sha=sha;
-  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}`,
-    {method:"PUT",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"},body:JSON.stringify(body)});
+  const send=async(useSha)=>{
+    const body={message:"WSG plan update",content:btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))),branch:g.branch||"main"};
+    if(useSha)body.sha=useSha;
+    return fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}`,
+      {method:"PUT",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"},body:JSON.stringify(body)});
+  };
+  let r=await send(sha);
+  if(r.status===409||r.status===422){ const cur=await ghGet(path); r=await send(cur.sha); } // sha veraltet → frisch holen & neu versuchen
   if(!r.ok)throw new Error("PUT "+r.status);
 }
 async function ghSavePlan(){
@@ -1106,9 +1113,12 @@ async function ghSavePlan(){
   catch(e){flash("⚠ GitHub: "+e.message);}
 }
 async function ghLoadPlan(){
+  const g=gh(); if(!g.token||!g.owner||!g.repo){setSource("empty");flash("⚠ Kein Token/Repo hinterlegt");return;}
+  setSource("laden");
   try{const cur=await ghGet("data/WSG_plan_override.json");
-    if(cur.json){DATA=cur.json;if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};persist();renderAll();flash("✅ Plan geladen");}}
-  catch(e){flash("⚠ GitHub: "+e.message);}
+    if(cur.json){DATA=cur.json;if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};curTour=DATA.tours[0]?.id;persist();renderAll();setSource("privat");flash("☁ Tourendaten aus privatem Repo geladen");}
+    else{setSource("leer");flash("⚠ data/WSG_plan_override.json fehlt im Repo "+g.owner+"/"+g.repo);}}
+  catch(e){setSource("fehler",e.message);flash("⚠ GitHub: "+e.message);}
 }
 
 /* ============ View-Steuerung (embed/postMessage) ============ */

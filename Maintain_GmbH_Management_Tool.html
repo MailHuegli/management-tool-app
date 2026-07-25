@@ -64,10 +64,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
   <button class="primary" id="btnRefresh">🔄 Aktualisieren</button>
   <div class="status" id="status">bereit · lokaler Stand</div>
   <div class="sp"></div>
-  <div class="seg" id="srcSeg" title="Datenquelle">
-    <button data-src="ist">Ist-Zahlen</button>
-    <button data-src="plan">Kalkuliert</button>
-  </div>
+  <span class="muted" style="font-size:12px">Umsatz &amp; Kosten kalkuliert aus Tourenplan · echte Zahlen in „Eingaben"</span>
 </header>
 
 <nav class="tabs" id="tabs"></nav>
@@ -90,15 +87,13 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
       <div class="row"><h3 style="margin:0">Leistungskatalog — Stundensätze (CHF/h)</h3>
         <span class="sp" style="flex:1"></span><span class="muted" id="catSum"></span></div>
       <table id="catTable"></table>
-      <div class="muted" style="font-size:12px;margin-top:6px">Umsatz (kalkuliert) reagiert live auf Satz- und Stundenänderungen.</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Satz = dein Verkaufspreis pro Stunde. Stunden kommen aus dem Tourenplan.</div>
     </div>
-    <div class="grid2">
-      <div class="card"><h3>Köpfe & Löhne</h3><div id="staffInputs"></div></div>
-      <div class="card">
-        <h3>Ist-Zahlen erfassen</h3>
-        <div class="muted" style="font-size:12px">Direkt eintippen (CHF/Jahr). Aktiv im Modus „Ist-Zahlen".</div>
-        <div id="istInputs"></div>
-      </div>
+    <div class="card"><h3>Berechnungsbasis</h3><div id="staffInputs"></div></div>
+    <div class="card">
+      <h3>Echte Zahlen (überschreiben die Kalkulation)</h3>
+      <div class="muted" style="font-size:12px">Häkchen setzen und Wert (CHF/Jahr) eintragen — nur angehakte Zeilen überschreiben die aus dem Tourenplan berechneten Werte.</div>
+      <div id="istInputs"></div>
     </div>
     <div class="card">
       <h3>Import</h3>
@@ -107,7 +102,6 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
         <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">⬆ Monats-Excel<input type="file" id="fileMonat" accept=".xlsx,.csv" hidden></label>
         <button class="sm" id="btnTplList">⬇ Gebäudeliste-Vorlage</button>
         <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">⬆ Gebäudeliste<input type="file" id="fileList" accept=".xlsx,.csv" hidden></label>
-        <button class="sm" id="btnFromTour">↙ aus Tourenplanung laden</button>
       </div>
     </div>
   </section>
@@ -221,54 +215,51 @@ const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],admin:[55
 /* ---- Modell ---- */
 // EMPTY = Start ohne Token/lokale Daten: keine Zahlen. Struktur/Katalog bleibt (App-Konfig, keine Betriebsdaten).
 const DEF={
-  src:"ist",
   istUR:0,istTH:0,istGR:0,istGarten:0,istWinter:0,istUebrig:0,
   kPersonal:0,kGF:0,kFahrzeug:0,kMaterial:0,kWinter:0,kVerwaltung:0,kAbschreibung:0,kSonstige:0,
-  hours:{ur:0,gr:0,th:0,bs:0,ga:0,win:0,hw:0,obj:0},
+  over:{},                                   // welche Zeilen mit echter Zahl überschrieben sind
   rates:Object.fromEntries(CATALOG.map(c=>[c[0],c[3]])),
-  heads:{tag:0,garten:0,abend:0,admin:0},
   wages:{tag:5700,garten:5300,abend:4500,admin:6300},
   social:20, mwst:8.1, monate:null, gebaeude:null,
   sc:{preis:0,wachs:0,verr:0,ziel:8}
 };
-// DEMO = realistische Beispielzahlen einer ~16-FTE Hauswartungs-GmbH (nur auf Anforderung / im privaten Repo)
+// DEMO = realistische Beispielzahlen (nur auf Anforderung); alle Zeilen als echte Zahl gesetzt → selbsttragend ohne Tourenplan
+const ALLKEYS=["istUR","istTH","istGR","istGarten","istWinter","istUebrig","kPersonal","kGF","kFahrzeug","kMaterial","kWinter","kVerwaltung","kAbschreibung","kSonstige"];
 const DEMO={...structuredClone(DEF),
   istUR:820000,istTH:340000,istGR:190000,istGarten:410000,istWinter:95000,istUebrig:70000,
   kPersonal:1180000,kGF:150000,kFahrzeug:120000,kMaterial:110000,kWinter:35000,
   kVerwaltung:130000,kAbschreibung:60000,kSonstige:55000,
-  hours:{ur:17000,gr:3000,th:3400,bs:400,ga:4200,win:900,hw:2600,obj:1800},
-  heads:{tag:10,garten:4,abend:8,admin:2}};
+  over:Object.fromEntries(ALLKEYS.map(k=>[k,true]))};
 let M=load();
-function isEmptyCockpit(){const r=base({...M,src:"ist"});
+function isEmptyCockpit(){const r=base(M);
   return Object.values(r.rev).every(v=>!v)&&Object.values(r.cost).every(v=>!v)&&!M.monate;}
 
 function load(){try{const s=localStorage.getItem("maintain_cockpit_v2");if(s)return{...structuredClone(DEF),...JSON.parse(s)};}catch(e){}return structuredClone(DEF);}
 function save(){try{localStorage.setItem("maintain_cockpit_v2",JSON.stringify(M));}catch(e){}}
 
-/* ---- Kernberechnung: base(m) liefert Umsatz/Kosten je Modus ---- */
+/* ---- Kernberechnung ----
+   Alles KALKULIERT aus dem Tourenplan. Jede Zeile ist per Häkchen mit einer echten Zahl überschreibbar (m.over). */
+const REVKEYS={ur:"istUR",th:"istTH",gr:"istGR",garten:"istGarten",winter:"istWinter",uebrig:"istUebrig"};
+const COSTKEYS={personal:"kPersonal",gf:"kGF",fahrzeug:"kFahrzeug",material:"kMaterial",winter:"kWinter",verwaltung:"kVerwaltung",abschreibung:"kAbschreibung",sonstige:"kSonstige"};
+const CAT2TOUR={ur:"ur",gr:"gr",th:"th",ga:"ga",win:"win"};  // Katalog-Bündel → Tour-Service
+function billableHours(){const o=readTourPlan();return o?o.billable:null;}
+function calcRev(m){ // Umsatz kalkuliert = verrechenbare Jahresstunden (Tourenplan) × Katalogsatz
+  const H=billableHours()||{ur:0,th:0,gr:0,ga:0,win:0};
+  return {ur:m.rates.ur*H.ur, th:m.rates.th*H.th, gr:m.rates.gr*H.gr,
+    garten:m.rates.ga*H.ga, winter:m.rates.win*H.win, uebrig:0};
+}
+function calcCost(m){ // Kosten kalkuliert aus dem Tourenplan (Personal/Fahrzeuge/Verwaltung); Rest 0 bis überschrieben
+  const o=readTourPlan();
+  if(!o) return {personal:0,gf:0,fahrzeug:0,material:0,winter:0,verwaltung:0,abschreibung:0,sonstige:0};
+  return {personal:o.personal, gf:0, fahrzeug:o.fzTotal, material:0, winter:0,
+    verwaltung:o.admin*o.adminWage*13*o.soc, abschreibung:0, sonstige:0};
+}
 function base(m){
-  if(m.src==="plan"){
-    const rev={
-      ur:m.rates.ur*m.hours.ur, gr:m.rates.gr*m.hours.gr,
-      th:m.rates.th*m.hours.th + m.rates.hw*m.hours.hw + m.rates.obj*m.hours.obj + m.rates.bs*m.hours.bs,
-      garten:m.rates.ga*m.hours.ga, winter:m.rates.win*m.hours.win, uebrig:0
-    };
-    const soc=1+m.social/100, F=13*soc;
-    // Personal = Köpfe × Lohn × Beschäftigungsgrad (Feldkräfte sind teils Teilzeit/saisonal)
-    const PENSUM={tag:0.70,garten:0.58,abend:0.62};
-    const personal=(m.heads.tag*m.wages.tag*PENSUM.tag
-      + m.heads.garten*m.wages.garten*PENSUM.garten
-      + m.heads.abend*m.wages.abend*PENSUM.abend)*F;
-    const cost={personal, gf:150000,
-      fahrzeug:DEF.kFahrzeug, material:DEF.kMaterial, winter:DEF.kWinter,
-      verwaltung:m.heads.admin*m.wages.admin*F, abschreibung:DEF.kAbschreibung, sonstige:DEF.kSonstige};
-    return {rev,cost};
-  }
-  return {
-    rev:{ur:m.istUR,th:m.istTH,gr:m.istGR,garten:m.istGarten,winter:m.istWinter,uebrig:m.istUebrig},
-    cost:{personal:m.kPersonal,gf:m.kGF,fahrzeug:m.kFahrzeug,material:m.kMaterial,winter:m.kWinter,
-      verwaltung:m.kVerwaltung,abschreibung:m.kAbschreibung,sonstige:m.kSonstige}
-  };
+  const cr=calcRev(m), cc=calcCost(m), over=m.over||{};
+  const rev={}, cost={};
+  Object.keys(cr).forEach(k=>{const ok=REVKEYS[k]; rev[k]=over[ok]?(+m[ok]||0):cr[k];});
+  Object.keys(cc).forEach(k=>{const ok=COSTKEYS[k]; cost[k]=over[ok]?(+m[ok]||0):cc[k];});
+  return {rev,cost,calc:{rev:cr,cost:cc}};  // calc = Kalkulationswert (zur Anzeige in Eingaben)
 }
 const REVLABEL={ur:"Unterhaltsreinigung",th:"Technischer Hauswart",gr:"Spezial-/Grundreinigung",garten:"Gartenunterhalt + Material",winter:"Winter",uebrig:"Übriges"};
 const COSTLABEL={personal:"Personal",gf:"Geschäftsführung",fahrzeug:"Fahrzeuge",material:"Material",winter:"Winter",verwaltung:"Verwaltung",abschreibung:"Abschreibung",sonstige:"Sonstige"};
@@ -385,57 +376,60 @@ function kpiBoxes(r){
 /* ---- Tourenplan aus localStorage lesen (grobe Betriebskennzahlen) ---- */
 function readTourPlan(){
   try{const s=localStorage.getItem("wsg_plan_v4");if(!s)return null;const d=JSON.parse(s);
-    const MAXMIN={tag:2520,garten:5040,abend:1350},WEEK=2520;
-    // sehr grobe FTE/Kosten-Schätzung (das Detail lebt in der Tourenplanung)
-    let fte=0,cost=0;const soc=1+(d.social||20)/100;
-    (d.tours||[]).forEach(t=>{const grade=0.7; fte+=t.persons*grade;
-      cost+=(d.wages?.[t.eq]||5000)*t.persons*grade*13*soc;});
+    if(!d||!d.objs||!d.objs.length) return null;
+    const soc=1+(d.social||20)/100;
+    // verrechenbare Jahresstunden je Kategorie = Σ (Minuten × Einsätze/Jahr) / 60
+    const bh={ur:0,th:0,gr:0,ga:0,win:0};
+    d.objs.forEach(o=>(o.services||[]).forEach(sv=>{if(bh[sv.k]!==undefined)bh[sv.k]+=(sv.min*sv.freq)/60;}));
+    // grobe FTE/Personalkosten je Equipe (Abend/Garten sind Teilzeit/saisonal; Detail lebt in der Tourenplanung)
+    const GR={tag:0.85,garten:0.50,abend:0.45};
+    let fte=0,personal=0,fieldHeads=0;
+    (d.tours||[]).forEach(t=>{const grade=GR[t.eq]||0.7; fte+=t.persons*grade; fieldHeads+=t.persons;
+      personal+=(d.wages?.[t.eq]||5000)*t.persons*grade*13*soc;});
     const vehicles=(d.tours||[]).filter(t=>t.vehicle).length;
-    return {tours:(d.tours||[]).length,objs:(d.objs||[]).length,fte,personal:cost,vehicles};
+    const fzTotal=vehicles*(d.fzkost||8000);
+    const admin=Math.max(0,Math.ceil(fieldHeads/(d.ratio||10)));
+    return {tours:(d.tours||[]).length,objs:d.objs.length,fte,personal,vehicles,fzTotal,
+      fieldHeads,admin,adminWage:(d.wages?.admin||6300),soc,billable:bh};
   }catch(e){return null;}
 }
 
 /* ---- Eingaben ---- */
+const REV_ROWS=[["istUR","Unterhaltsreinigung","ur"],["istTH","Technischer Hauswart","th"],["istGR","Spezial-/Grundreinigung","gr"],
+  ["istGarten","Gartenunterhalt + Material","garten"],["istWinter","Winter","winter"],["istUebrig","Übriges","uebrig"]];
+const COST_ROWS=[["kPersonal","Personal","personal"],["kGF","Geschäftsführung","gf"],["kFahrzeug","Fahrzeuge","fahrzeug"],["kMaterial","Material","material"],
+  ["kWinter","Winter","winter"],["kVerwaltung","Verwaltung","verwaltung"],["kAbschreibung","Abschreibung","abschreibung"],["kSonstige","Sonstige","sonstige"]];
 function renderEingaben(){
-  let h=`<thead><tr><th>Bündel</th><th class="n">Satz CHF/h</th><th>Marktband</th><th class="n">Stunden/Jahr</th><th class="n">Umsatz</th></tr></thead><tbody>`;
-  CATALOG.forEach(c=>{const[k,l,band]=c;const rate=M.rates[k],hrs=M.hours[k]||0;
+  const bh=billableHours();
+  // Katalog: Satz editierbar, Stunden aus dem Tourenplan (verrechenbar, read-only)
+  let h=`<thead><tr><th>Bündel</th><th class="n">Satz CHF/h</th><th>Marktband</th><th class="n">Std/Jahr (Touren)</th><th class="n">Umsatz</th></tr></thead><tbody>`;
+  CATALOG.forEach(c=>{const[k,l,band]=c;const rate=M.rates[k];const hrs=(bh&&CAT2TOUR[k])?bh[CAT2TOUR[k]]:0;
     h+=`<tr><td>${l}</td>
       <td class="n"><input type="number" data-rate="${k}" value="${rate}" style="width:80px"></td>
       <td class="band">${band[0]}–${band[1]}</td>
-      <td class="n"><input type="number" data-hrs="${k}" value="${hrs}" style="width:90px"></td>
+      <td class="n">${CAT2TOUR[k]?nf(hrs):"–"}</td>
       <td class="n">${chf(rate*hrs)}</td></tr>`;});
-  h+="</tbody>";$("#catTable").innerHTML=h;
-  $("#catSum").textContent="kalkulierter Katalog-Umsatz "+chf(CATALOG.reduce((a,c)=>a+M.rates[c[0]]*(M.hours[c[0]]||0),0));
+  $("#catTable").innerHTML=h+"</tbody>";
+  $("#catSum").textContent=bh?("Umsatz aus Touren "+chf(CATALOG.reduce((a,c)=>a+M.rates[c[0]]*((bh&&CAT2TOUR[c[0]])?bh[CAT2TOUR[c[0]]]:0),0))):"kein Tourenplan geladen";
   $$('#catTable [data-rate]').forEach(i=>i.onchange=()=>{M.rates[i.dataset.rate]=+i.value||0;save();renderEingaben();renderActive();});
-  $$('#catTable [data-hrs]').forEach(i=>i.onchange=()=>{M.hours[i.dataset.hrs]=+i.value||0;save();renderEingaben();renderActive();});
-  // Köpfe & Löhne
-  const roles={tag:"Hauswart/Tag",garten:"Garten",abend:"Abend",admin:"Verwaltung/GF"};
-  let si="";Object.keys(roles).forEach(k=>{si+=`<div class="row" style="margin:4px 0">
-    <span style="width:130px">${roles[k]}</span>
-    <label class="band">Köpfe <input type="number" data-head="${k}" value="${M.heads[k]}" style="width:64px"></label>
-    <label class="band">Lohn/Mt <input type="number" data-wage="${k}" value="${M.wages[k]}" style="width:80px"></label></div>`;});
-  si+=`<div class="row" style="margin-top:6px">
-    <label class="band">Sozialkosten % <input type="number" id="mSocial" value="${M.social}" style="width:64px"></label>
-    <label class="band">MwSt % <input type="number" id="mMwst" value="${M.mwst}" style="width:64px"></label></div>`;
-  $("#staffInputs").innerHTML=si;
-  $$('#staffInputs [data-head]').forEach(i=>i.onchange=()=>{M.heads[i.dataset.head]=+i.value||0;save();renderActive();});
-  $$('#staffInputs [data-wage]').forEach(i=>i.onchange=()=>{M.wages[i.dataset.wage]=+i.value||0;save();renderActive();});
-  $("#mSocial").onchange=e=>{M.social=+e.target.value||0;save();renderActive();};
-  $("#mMwst").onchange=e=>{M.mwst=+e.target.value||0;save();};
-  // Ist-Inputs
-  const rev=[["istUR","Unterhaltsreinigung"],["istTH","Technischer Hauswart"],["istGR","Spezial-/Grundreinigung"],
-    ["istGarten","Gartenunterhalt + Material"],["istWinter","Winter"],["istUebrig","Übriges"]];
-  const cost=[["kPersonal","Personal"],["kGF","Geschäftsführung"],["kFahrzeug","Fahrzeuge"],["kMaterial","Material"],
-    ["kWinter","Winter"],["kVerwaltung","Verwaltung"],["kAbschreibung","Abschreibung"],["kSonstige","Sonstige"]];
-  let ii=`<div class="muted band" style="margin:6px 0">Umsatz nach Kategorie</div>`;
-  rev.forEach(([k,l])=>ii+=istRow(k,l));
-  ii+=`<div class="muted band" style="margin:10px 0 6px">Kosten</div>`;
-  cost.forEach(([k,l])=>ii+=istRow(k,l));
-  $("#istInputs").innerHTML=ii;
-  $$('#istInputs [data-ist]').forEach(i=>i.onchange=()=>{M[i.dataset.ist]=+i.value||0;save();renderActive();});
+  // Berechnungsbasis-Hinweis
+  $("#staffInputs").innerHTML=`<p class="muted" style="font-size:13px;margin:0 0 6px">
+    <b>Umsatz</b> = verrechenbare Stunden aus dem Tourenplan × Satz (oben).
+    <b>Personal, Fahrzeuge, Verwaltung</b> kommen ebenfalls aus dem Tourenplan.
+    Für echte, verbuchte Zahlen: unten Häkchen setzen und Wert eintragen — dann überschreibt die echte Zahl die Kalkulation.</p>`;
+  // Override-Tabelle (Kalkuliert aus Touren · Häkchen · echte Zahl)
+  const b=base(M);
+  const row=(key,label,ck,grp)=>{const calc=grp==="rev"?b.calc.rev[ck]:b.calc.cost[ck];const on=!!(M.over&&M.over[key]);
+    return `<tr><td>${label}</td><td class="n muted">${chf(calc)}</td>
+      <td style="text-align:center"><input type="checkbox" data-ov="${key}" ${on?"checked":""}></td>
+      <td class="n"><input type="number" data-val="${key}" value="${M[key]||0}" ${on?"":"disabled"} style="width:110px"></td></tr>`;};
+  let t=`<table><thead><tr><th>Zeile</th><th class="n">Kalkuliert (Touren)</th><th>echt?</th><th class="n">Echte Zahl</th></tr></thead><tbody>`;
+  t+=`<tr><td colspan="4" class="muted band">Umsatz</td></tr>`; REV_ROWS.forEach(r=>t+=row(r[0],r[1],r[2],"rev"));
+  t+=`<tr><td colspan="4" class="muted band">Kosten</td></tr>`; COST_ROWS.forEach(r=>t+=row(r[0],r[1],r[2],"cost"));
+  $("#istInputs").innerHTML=t+"</tbody></table>";
+  $$('#istInputs [data-ov]').forEach(c=>c.onchange=()=>{M.over=M.over||{};M.over[c.dataset.ov]=c.checked;save();renderEingaben();renderActive();});
+  $$('#istInputs [data-val]').forEach(i=>i.onchange=()=>{M[i.dataset.val]=+i.value||0;save();renderActive();});
 }
-function istRow(k,l){return `<div class="row" style="margin:3px 0"><span style="width:180px;font-size:13px">${l}</span>
-  <input type="number" data-ist="${k}" value="${M[k]}" style="width:120px"></div>`;}
 
 /* ---- Finanz-Dashboard ---- */
 let finMode="ist";
@@ -546,16 +540,14 @@ function parseMonate(rows){
 function applyMonate(rows){
   const mon=parseMonate(rows);if(!mon.length){flash("Keine gültigen Monatszeilen erkannt");return;}
   M.monate=mon;
-  // Summen in ist* schreiben (grob auf Kategorien verteilt anhand aktueller Anteile)
+  // Jahres-Ist auf Kategorien verteilen (feste Richtanteile) und als echte Zahlen aktivieren
   const tot=mon.reduce((a,m)=>({u:a.u+m.umsatz,k:a.k+m.kosten}),{u:0,k:0});
-  const b=base({...M,src:"ist"}); const rSum=Object.values(b.rev).reduce((a,x)=>a+x,0)||1;
-  M.istUR=Math.round(tot.u*b.rev.ur/rSum);M.istTH=Math.round(tot.u*b.rev.th/rSum);M.istGR=Math.round(tot.u*b.rev.gr/rSum);
-  M.istGarten=Math.round(tot.u*b.rev.garten/rSum);M.istWinter=Math.round(tot.u*b.rev.winter/rSum);M.istUebrig=Math.round(tot.u*b.rev.uebrig/rSum);
-  const cSum=Object.values(b.cost).reduce((a,x)=>a+x,0)||1;
-  M.kPersonal=Math.round(tot.k*b.cost.personal/cSum);M.kGF=Math.round(tot.k*b.cost.gf/cSum);M.kFahrzeug=Math.round(tot.k*b.cost.fahrzeug/cSum);
-  M.kMaterial=Math.round(tot.k*b.cost.material/cSum);M.kWinter=Math.round(tot.k*b.cost.winter/cSum);M.kVerwaltung=Math.round(tot.k*b.cost.verwaltung/cSum);
-  M.kAbschreibung=Math.round(tot.k*b.cost.abschreibung/cSum);M.kSonstige=Math.round(tot.k*b.cost.sonstige/cSum);
-  M.src="ist";save();setSrc("ist");switchTab("finanzen");flash(mon.length+" Monate importiert");
+  const rp={istUR:.42,istTH:.18,istGR:.10,istGarten:.21,istWinter:.05,istUebrig:.04};
+  const cp={kPersonal:.64,kGF:.08,kFahrzeug:.065,kMaterial:.06,kWinter:.02,kVerwaltung:.07,kAbschreibung:.03,kSonstige:.025};
+  Object.entries(rp).forEach(([k,p])=>M[k]=Math.round(tot.u*p));
+  Object.entries(cp).forEach(([k,p])=>M[k]=Math.round(tot.k*p));
+  M.over=M.over||{}; ALLKEYS.forEach(k=>M.over[k]=true);   // Monatszahlen = echte Zahlen → überschreiben
+  save();renderActive();switchTab("finanzen");flash(mon.length+" Monate importiert (als echte Zahlen gesetzt)");
 }
 function parseList(rows){
   const g=(r,...names)=>{for(const n of names){for(const k of Object.keys(r)){if(k.toLowerCase().includes(n))return r[k];}}return"";};
@@ -571,16 +563,9 @@ function applyList(rows){
   // Aufwand Min/Monat → Jahresstunden → grobe Reinigungs-Umsatzschätzung zum Katalogsatz
   const jahresStd=sum.auf*12/60;
   M.gebaeude={count:sum.n,areaIn:sum.ai,areaGa:sum.ag,aufwandMin:sum.auf,jahresStd:Math.round(jahresStd)};
-  // Katalog-Stunden Unterhaltsreinigung an die Liste angleichen
-  M.hours.ur=Math.round(jahresStd);save();renderActive();
+  save();renderActive();
   flash(`${sum.n} Gebäude · ${nf(sum.ai)} m² innen · ${nf(Math.round(jahresStd))} h/Jahr Reinigung`);
   status(`Gebäudeliste: ${sum.n} Objekte importiert`);
-}
-function fromTourPlan(){
-  const ops=readTourPlan();if(!ops){flash("Kein Tourenplan gefunden (öffne zuerst Tourenplanung)");return;}
-  M.kPersonal=Math.round(ops.personal);
-  M.heads.tag=(JSON.parse(localStorage.getItem("wsg_plan_v4")).tours||[]).filter(t=>t.eq==="tag").reduce((a,t)=>a+t.persons,0);
-  save();renderActive();flash("Personalkosten aus Tourenplanung übernommen: "+chf(ops.personal));
 }
 
 /* ---- GitHub-Sync (Merge, nur DIRTY) ---- */
@@ -615,9 +600,9 @@ async function ghSaveData(){
 async function ghLoadData(){
   status("lade Cockpit-Daten…");
   try{const cur=await ghReq("GET","data/cockpit-data.json");
-    if(cur.json||cur.content){const remote=JSON.parse(decodeURIComponent(escape(atob(cur.content.replace(/\n/g,"")))));
-      M={...structuredClone(DEF),...remote};save();renderActive();status("✅ geladen");flash("Cockpit-Daten geladen");}
-    else{status("keine Datei im Repo");}
+    let remote=null; try{if(cur.content)remote=JSON.parse(decodeURIComponent(escape(atob(cur.content.replace(/\n/g,"")))));}catch(e){remote=null;}
+    if(remote){M={...structuredClone(DEF),...remote};if(!M.over)M.over={};save();renderActive();status("✅ geladen");flash("Cockpit-Daten geladen");}
+    else{status("keine (gültige) Datei im Repo");}
   }catch(e){status("⚠ "+e.message);flash("GitHub-Fehler: "+e.message);}
 }
 async function ghTest(){
@@ -656,9 +641,6 @@ function renderActive(){
   else if(curTab==="szenario")renderSzenario();
   else if(curTab==="benchmark")renderBenchmark();
 }
-function setSrc(src){M.src=src;save();$$('#srcSeg button').forEach(b=>b.classList.toggle("on",b.dataset.src===src));
-  status("Datenquelle: "+(src==="ist"?"Ist-Zahlen":"Kalkuliert"));renderActive();}
-
 let flashT;function flash(m){const f=$("#flash");f.textContent=m;f.classList.add("on");clearTimeout(flashT);flashT=setTimeout(()=>f.classList.remove("on"),2200);}
 function status(m){$("#status").textContent=m;}
 // Sagt der eingebetteten Tourenplanung, sie soll ihre Daten aus dem privaten Repo laden
@@ -671,7 +653,6 @@ function initTabs(){
 }
 function wire(){
   $("#btnRefresh").onclick=aktTop;
-  $$('#srcSeg button').forEach(b=>b.onclick=()=>setSrc(b.dataset.src));
   $$('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;$$('#finSeg button').forEach(x=>x.classList.toggle("on",x===b));renderFinanzen();});
   ["Preis","Wachs","Verr","Ziel"].forEach(s=>{const el=$("#s"+s);el.oninput=()=>{
     M.sc.preis=+$("#sPreis").value;M.sc.wachs=+$("#sWachs").value;M.sc.verr=+$("#sVerr").value;M.sc.ziel=+$("#sZiel").value;
@@ -679,7 +660,6 @@ function wire(){
   $("#btnTplMonat").onclick=tplMonat;$("#btnTplList").onclick=tplList;
   $("#fileMonat").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyMonate);e.target.value="";};
   $("#fileList").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyList);e.target.value="";};
-  $("#btnFromTour").onclick=fromTourPlan;
   // GitHub UI
   const g=gh();$("#ghToken").value=g.token||"";$("#ghOwner").value=g.owner||"MailHuegli";$("#ghRepo").value=g.repo||"Management-Tool";$("#ghBranch").value=g.branch||"main";
   $("#ghSaveBtn").onclick=()=>{ghSet({token:$("#ghToken").value.trim(),owner:$("#ghOwner").value.trim(),repo:$("#ghRepo").value.trim(),branch:$("#ghBranch").value.trim()||"main"});flash("Verbindung gespeichert");status("GitHub-Verbindung gespeichert");ghLoadData();tellFrameLoad();};
@@ -690,12 +670,13 @@ function wire(){
   $("#btnDemo").onclick=loadDemoCockpit;
   // iframe ready + save-Rückmeldung
   window.addEventListener("message",ev=>{const d=ev.data||{};
-    if(d.wsgReady){frameReady=true; if(PLANTABS.includes(curTab))setPlanView(PLANVIEWS[curTab]); if(gh().token)tellFrameLoad(); renderUebersicht();}
+    if(d.wsgReady){frameReady=true; if(PLANTABS.includes(curTab))setPlanView(PLANVIEWS[curTab]); if(gh().token)tellFrameLoad(); renderActive();}
+    if(d.wsgDataChanged){renderActive();}   // Tourenplan geändert → Umsatz/Kosten neu berechnen
     if(d.wsgSaved)status("✅ Tourenplan gespeichert");});
 }
 function boot(){
   initTabs();wire();
-  $$('#srcSeg button').forEach(b=>b.classList.toggle("on",b.dataset.src===M.src));
+  if(!M.over)M.over={};
   const hash=location.hash.slice(1);
   switchTab(TABS.some(t=>t[0]===hash)?hash:"uebersicht");
   // Cockpit-Kennzahlen automatisch aus dem privaten Repo laden (falls Token hinterlegt)
