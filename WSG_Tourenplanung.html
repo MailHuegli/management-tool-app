@@ -74,6 +74,8 @@ tr:hover td{background:var(--panel2)}
 .legend b{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:3px}
 .cov{border-style:dashed!important;border-color:#fff!important}
 .hint{background:rgba(240,147,43,.14);border:1px solid var(--warn);color:#ffd9a8;border-radius:8px;padding:8px 10px;font-size:13px}
+.warnrow{background:rgba(240,147,43,.16);border:1px solid var(--warn);color:#ffd9a8;border-radius:6px;padding:3px 7px;font-size:11px;margin:5px 0}
+.warnrow.bad{background:rgba(231,76,60,.16);border-color:var(--bad);color:#ffc9c2}
 .split{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}
 @media(max-width:900px){.split{grid-template-columns:1fr}.pickbar{top:0}}
 .mono{font-variant-numeric:tabular-nums}
@@ -86,6 +88,12 @@ tr:hover td{background:var(--panel2)}
 .tabs2{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .chk{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mut)}
 .flash{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--acc);border-radius:10px;padding:9px 16px;z-index:100;box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:.25s}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px}
+.modal.on{display:flex}
+.modalbox{background:var(--panel);border:1px solid var(--acc);border-radius:12px;padding:16px;max-width:620px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.modalbox h3{margin:0 0 4px}
+.modalbox table{margin-top:8px}
+.modalbox .clbl{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
 .flash.on{opacity:1}
 </style>
 </head>
@@ -229,7 +237,13 @@ tr:hover td{background:var(--panel2)}
   <!-- ============ KUNDEN ============ -->
   <section class="chap" data-chap="kunden">
     <div class="card">
-      <h3>Kundenverzeichnis <span class="muted" id="kundenCount"></span></h3>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="margin:0">Kundenverzeichnis <span class="muted" id="kundenCount"></span></h3>
+        <span class="sp" style="flex:1"></span>
+        <button class="sm" id="btnTplKunden">⬇ Excel-Vorlage</button>
+        <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">⬆ Kontakte-Excel<input type="file" id="fileKunden" accept=".xlsx,.csv" hidden></label>
+      </div>
+      <div class="muted" style="font-size:12px;margin:4px 0">Aktualisiert Ansprechperson/E-Mail/Tel. je Kunde (Zuordnung über Kundenname).</div>
       <div style="max-height:70vh;overflow:auto"><table id="kundenTable"></table></div>
     </div>
   </section>
@@ -254,8 +268,10 @@ tr:hover td{background:var(--panel2)}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h3 style="margin:0">👤 Mitarbeitende</h3>
         <span class="sp" style="flex:1"></span>
+        <button class="sm" id="btnTplStaff">⬇ Excel-Vorlage</button>
+        <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">⬆ Mitarbeitende-Excel<input type="file" id="fileStaff" accept=".xlsx,.csv" hidden></label>
         <button class="sm" id="btnAddStaff">＋ Person</button>
-        <button class="sm" id="btnGenStaff">👥 Fiktive aus Touren erzeugen</button>
+        <button class="sm" id="btnGenStaff">👥 Fiktive aus Touren</button>
       </div>
       <div id="staffWarn"></div>
       <div style="overflow:auto;margin-top:8px"><table id="staffTable"></table></div>
@@ -264,8 +280,11 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26b</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26d</b></div>
 <div class="flash" id="flash"></div>
+
+<!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
+<div id="objModal" class="modal"><div class="modalbox" id="objModalBox"></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
@@ -612,8 +631,11 @@ function buildTourCard(t){
   // Balkenbreite = Ø-Auslastung (max 100% visuell). Farbe: rot >105 (über Jahres-Hürde), grün 80–105, orange <80
   const cls=y.avg>105?"bad":y.avg>=80?"":"warn";
   const barW=clamp(y.avg,0,100);
+  const staffed=(DATA.staff||[]).filter(s=>s.tid===t.id).length;   // zugeteilte Mitarbeitende
+  const understaffed=staffed<t.persons;
   card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
-    <div class="row muted">${t.objs.length} Objekte · ${t.persons} P</div>
+    <div class="row muted">${t.objs.length} Objekte · ${t.persons} P · ${staffed} MA</div>
+    ${understaffed?`<div class="warnrow">⚠ Nicht besetzt — ${staffed}/${t.persons} Mitarbeitende. Person zuteilen (Reiter Personal).</div>`:``}
     <div class="bar ${cls}"><i style="width:${barW}%"></i></div>
     <div class="row" style="font-size:12px"><span class="${y.avg>105?'over':y.avg>=80?'good':'mid'}">Ø ${nf(y.avg)}%</span>
       <span class="${y.peak>110?'over':'muted'}">· Spitze ${nf(y.peak)}%</span></div>
@@ -641,6 +663,7 @@ function buildTourCard(t){
 }
 // Schichten-Übersicht: klar getrennt nach Hauswart / Garten / Abendreinigung
 function renderTourGrid(){
+  if(!Array.isArray(DATA.staff)){DATA.staff=fictitiousStaffList();persist();}  // fiktive MA je Slot, damit Touren besetzt starten
   const box=$("#tourGrid"); box.innerHTML="";
   const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["abend","🌙 Abendreinigung"]];
   groups.forEach(([eq,label])=>{
@@ -864,17 +887,21 @@ function renderObjekte(){
   $("#objTotal").textContent=DATA.objs.length+" Objekte";
   const tbl=$("#objTable");
   const opts=eq=>DATA.tours.filter(t=>t.eq===eq).map(t=>t.id);
-  let h=`<thead><tr><th>ID</th><th>Adresse</th><th>Ort</th><th>Typ</th><th>m² innen</th><th>Garten</th><th>Kunde</th><th>Tour</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>ID</th><th>Adresse</th><th>Ort</th><th>Typ</th><th>m² innen</th><th>Garten</th><th>Kunde</th><th>Arbeiten (h/J)</th><th>Tour</th><th></th></tr></thead><tbody>`;
   DATA.objs.forEach(o=>{
     const cur=DATA.tours.find(t=>t.objs.includes(o.id));
-    const eq=cur?cur.eq:"tag";
     let sel=`<select data-obj="${o.id}">`;
     ["tag","garten","abend"].forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
     sel+=`</select>`;
-    h+=`<tr><td class="mono">${o.id}</td><td>${o.street}</td><td>${o.plz} ${o.ort}</td><td>${o.type}</td><td>${o.areaIn}</td><td>${o.areaGa||"–"}</td><td>${o.kunde}</td><td>${sel}</td></tr>`;
+    const arb=(o.services||[]).filter(s=>s.min>0).map(s=>SERVICE[s.k]?.label.split(" ")[0].slice(0,4)).join(", ")||"–";
+    const hJ=Math.round((o.services||[]).reduce((a,s)=>a+s.freq*s.min/60,0));
+    h+=`<tr><td class="mono">${o.id}</td><td>${o.street}</td><td>${o.plz} ${o.ort}</td><td>${o.type}</td><td>${o.areaIn}</td><td>${o.areaGa||"–"}</td><td>${o.kunde}</td>
+      <td title="${arb}">${hJ} h</td><td>${sel}</td>
+      <td><button class="sm" data-settings="${o.id}" title="Arbeiten anpassen">⚙</button></td></tr>`;
   });
   h+="</tbody>";tbl.innerHTML=h;
   $$("#objTable select").forEach(s=>s.onchange=()=>moveObj(s.dataset.obj,s.value));
+  $$('#objTable [data-settings]').forEach(b=>b.onclick=()=>openObjModal(b.dataset.settings));
 }
 
 /* ============ Ferien-Ansicht ============ */
@@ -956,33 +983,41 @@ function renderStaff(){
   if(!Array.isArray(DATA.staff)) DATA.staff=fictitiousStaffList();
   const social=DATA.social/100;
   let costTot=0,fteTot=0;
-  let h=`<thead><tr><th>Name</th><th>Tour</th><th>Obj</th><th>BG%</th><th>h/Wo</th><th>n.Planung</th><th>Jahres-Std Ist/Soll</th><th>%</th><th>Kosten/Jahr</th><th></th></tr></thead><tbody>`;
-  let warn=false;
+  let h=`<thead><tr><th>Name</th><th>Tour</th><th>Obj</th><th>BG%</th><th>Bruttolohn/Mt</th><th>h/Wo</th><th>n.Planung</th><th>Jahres-Std Ist/Soll</th><th>%</th><th>Kosten/Jahr</th><th></th></tr></thead><tbody>`;
+  let warnOver=false, unassigned=0;
   DATA.staff.forEach((s,i)=>{
-    const t=DATA.tours.find(x=>x.id===s.tid);
+    const t=DATA.tours.find(x=>x.id===s.tid); const noTour=!t; if(noTour)unassigned++;
     const grade=t?tourGrade(t):0;
     const hWo=s.bg/100*42;
     const ist=t?annualWorkPP(t):0; const soll=s.bg/100*42*52;
-    const pct=soll?ist/soll*100:0; if(pct>105)warn=true;
+    const pct=(t&&soll)?ist/soll*100:0; if(t&&pct>105)warnOver=true;
     const cost=s.wageMt*s.bg/100*13*(1+social);costTot+=cost;fteTot+=s.bg/100;
-    let opts="";["tag","garten","abend"].forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
-    h+=`<tr>
-      <td><input type="text" data-f="name" data-i="${i}" value="${s.name}" style="width:120px"></td>
+    let opts=`<option value="" ${noTour?"selected":""}>— nicht eingeteilt —</option>`;
+    ["tag","garten","abend"].forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
+    h+=`<tr${noTour?' style="background:rgba(240,147,43,.10)"':''}>
+      <td><input type="text" data-f="name" data-i="${i}" value="${s.name}" style="width:120px">${noTour?' <span title="nicht eingeteilt" style="color:var(--warn)">⚠</span>':''}</td>
       <td><select data-f="tid" data-i="${i}">${opts}</select></td>
       <td>${t?t.objs.length:"–"}</td>
       <td><input type="number" data-f="bg" data-i="${i}" value="${s.bg}" style="width:56px"></td>
+      <td><input type="number" data-f="wageMt" data-i="${i}" value="${s.wageMt}" step="100" style="width:84px"> <span class="muted" title="inkl. Lohnnebenkosten ${nf(DATA.social)}%">×13×${nf(1+social,2)}</span></td>
       <td class="mono">${nf(hWo,1)}</td>
-      <td class="${grade>=s.bg?'good':'mid'}">${grade}%</td>
-      <td class="mono">${nf(ist)} / ${nf(soll)}</td>
-      <td class="${pct>105?'over':'good'}">${nf(pct)}%</td>
+      <td class="${noTour?'mid':(grade>=s.bg?'good':'mid')}">${noTour?'–':grade+'%'}</td>
+      <td class="mono">${noTour?'–':nf(ist)+' / '+nf(soll)}</td>
+      <td class="${noTour?'mid':(pct>105?'over':'good')}">${noTour?'nicht eingeteilt':nf(pct)+'%'}</td>
       <td class="mono">${chf(cost)}</td>
       <td><button class="sm" data-del="${i}">✕</button></td></tr>`;
   });
-  h+=`<tr><td colspan="8" style="text-align:right"><b>Total</b></td><td class="mono"><b>${chf(costTot)}</b></td><td></td></tr>`;
+  h+=`<tr><td colspan="9" style="text-align:right"><b>Total</b></td><td class="mono"><b>${chf(costTot)}</b></td><td></td></tr>`;
   $("#staffTable").innerHTML=h+"</tbody>";
-  $("#staffWarn").innerHTML=warn?`<div class="hint">Mind. eine Person &gt;105 % Jahres-Soll — Pensum erhöhen oder Tour entlasten.</div>`:"";
+  // Warn-Zusammenfassung: unbesetzte Touren + nicht eingeteilte Mitarbeitende + Überlast
+  const under=DATA.tours.filter(t=>(DATA.staff||[]).filter(s=>s.tid===t.id).length<t.persons);
+  const msgs=[];
+  if(under.length) msgs.push("⚠ "+under.length+" Tour(en) nicht (voll) besetzt: "+under.map(t=>t.id+" ("+((DATA.staff||[]).filter(s=>s.tid===t.id).length)+"/"+t.persons+")").join(", ")+" — Person zuteilen.");
+  if(unassigned) msgs.push("⚠ "+unassigned+" Mitarbeitende(r) nicht eingeteilt — einer Tour zuweisen.");
+  if(warnOver) msgs.push("⚠ Mind. eine Person &gt;105 % Jahres-Soll — Pensum erhöhen oder Tour entlasten.");
+  $("#staffWarn").innerHTML=msgs.length?`<div class="hint">${msgs.join("<br>")}</div>`:`<div class="muted" style="font-size:12px">✅ Alle Touren besetzt, alle Mitarbeitenden eingeteilt.</div>`;
   $$('#staffTable [data-f]').forEach(el=>el.onchange=()=>{const s=DATA.staff[+el.dataset.i];const f=el.dataset.f;
-    s[f]=(f==="bg")?clamp(+el.value||0,0,100):el.value;s.fiktiv=false;persist();renderStaff();});
+    s[f]=(f==="bg")?clamp(+el.value||0,0,100):(f==="wageMt")?(+el.value||0):el.value;s.fiktiv=false;persist();renderStaff();});
   $$('#staffTable [data-del]').forEach(b=>b.onclick=()=>{DATA.staff.splice(+b.dataset.del,1);persist();renderStaff();});
 }
 // Jahres-Ist-Stunden je Person = Ø-Auslastung der Tour × 42h × 52 Wochen (deckt sich mit der Tour-Anzeige)
@@ -1116,6 +1151,81 @@ function ferienImport(rows){
     const von=+r["KW von"]||+r["KW"]||1, bis=+r["KW bis"]||von;
     for(let w=von;w<=bis;w++)t.ferienKW.push(clamp(w,1,52));});
   persist();renderFerien();flash("Ferien importiert");
+}
+function deNum(v){return +String(v==null?0:v).replace(/['\s]/g,"").replace(",",".")||0;}
+
+/* ============ Mitarbeitende-Import ============ */
+function tplStaff(){
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Name","Tour","Bruttolohn/Mt","Pensum BG %"],
+    ["Max Muster","H01","5700","100"],["Anna Beispiel","G01","5300","80"]]),"Mitarbeitende");
+  XLSX.writeFile(wb,"Vorlage_Mitarbeitende_Import.xlsx");
+}
+function applyStaff(rows){
+  const g=(r,...k)=>{for(const x of k)if(r[x]!==undefined&&r[x]!=="")return r[x];return"";};
+  const staff=rows.map(r=>{const name=String(g(r,"Name","name")).trim();if(!name)return null;
+    const tid=String(g(r,"Tour","tid")).trim(); const t=DATA.tours.find(x=>x.id===tid);
+    return {name,tid:t?tid:"",wageMt:deNum(g(r,"Bruttolohn/Mt","Bruttolohn","Lohn"))||5000,
+      bg:clamp(deNum(g(r,"Pensum BG %","BG","Pensum"))||100,0,100),fiktiv:false};}).filter(Boolean);
+  if(!staff.length){flash("Keine Mitarbeitenden erkannt");return;}
+  if(Array.isArray(DATA.staff)&&DATA.staff.some(s=>!s.fiktiv)&&!confirm("Bestehende Mitarbeitende ersetzen?"))return;
+  DATA.staff=staff;persist();renderPersonal();flash(staff.length+" Mitarbeitende importiert");
+}
+
+/* ============ Kunden/Kontakte-Import (aktualisiert Objekte je Kundenname) ============ */
+function tplKunden(){
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Kunde","Ansprechperson","E-Mail","Tel."],
+    ["Muster AG","Fr. Muster","info@muster.ch","044 000 00 00"]]),"Kontakte");
+  XLSX.writeFile(wb,"Vorlage_Kontakte_Import.xlsx");
+}
+function applyKunden(rows){
+  const g=(r,...k)=>{for(const x of k)if(r[x]!==undefined&&r[x]!=="")return r[x];return"";};
+  let n=0;
+  rows.forEach(r=>{const ku=String(g(r,"Kunde","kunde")).trim();if(!ku)return;
+    const contact=g(r,"Ansprechperson","Kontakt"),email=g(r,"E-Mail","Email","Mail"),tel=g(r,"Tel.","Tel","Telefon");
+    DATA.objs.filter(o=>o.kunde===ku).forEach(o=>{if(contact)o.contact=contact;if(email)o.email=email;if(tel)o.tel=tel;n++;});});
+  persist();renderKunden();flash(n+" Objekt-Kontakte aktualisiert");
+}
+
+/* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
+const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt"],["win","Winterdienst"]];
+function openObjModal(id){
+  const o=objById(id); if(!o)return;
+  const cur=DATA.tours.find(t=>t.objs.includes(id));
+  const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
+  const rows=SVCLIST.map(([k,l])=>{const s=svc(k);
+    return `<tr><td><span class="clbl" style="background:${SERVICE[k].col}"></span>${l}</td>
+      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:70px"></td>
+      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:80px"></td></tr>`;}).join("");
+  let topts="";["tag","garten","abend"].forEach(e=>{topts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+"</optgroup>";});
+  $("#objModalBox").innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${o.id} · ${o.street}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
+    <div class="muted" style="font-size:12px">${o.plz} ${o.ort} · ${o.kunde} · ${o.type}</div>
+    <div class="toolbar"><label class="chk">Tour <select id="m_tour">${topts}</select></label>
+      <label class="chk">Fläche m² <input type="number" id="m_areaIn" value="${o.areaIn||0}" style="width:80px"></label>
+      <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label></div>
+    <table><thead><tr><th>Arbeit</th><th class="n">Frequenz/Jahr</th><th class="n">Dauer (min)</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:6px">Frequenz = Einsätze pro Jahr (wöchentlich 52 · monatlich 12 · quartalsweise 4). Dauer 0 = Leistung entfällt.</div>
+    <div class="toolbar" style="justify-content:flex-end"><button class="sm" id="objModalCancel">Abbrechen</button><button class="sm primary" id="objModalSave">Speichern</button></div>`;
+  $("#objModal").classList.add("on");
+  $("#objModalClose").onclick=closeObjModal; $("#objModalCancel").onclick=closeObjModal;
+  $("#objModalSave").onclick=()=>saveObjModal(id);
+}
+function closeObjModal(){$("#objModal").classList.remove("on");}
+function saveObjModal(id){
+  const o=objById(id); if(!o)return;
+  o.areaIn=+$("#m_areaIn").value||o.areaIn; o.areaGa=+$("#m_areaGa").value||0;
+  const abendPrev=(o.services.find(s=>s.k==="ur")||{}).abend||false;
+  o.services=[];
+  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0;
+    if(freq>0&&min>0){const s={k,freq,min}; if(k==="ur")s.abend=abendPrev; o.services.push(s);}});
+  o.winter=o.services.some(s=>s.k==="win");
+  const newTid=$("#m_tour").value; const cur=DATA.tours.find(t=>t.objs.includes(id));
+  closeObjModal();
+  if(!cur||cur.id!==newTid){ moveObj(id,newTid); }        // moveObj persistiert + rendert
+  else { persist(); renderView(curView); }
+  flash("Objekt "+o.id+" aktualisiert");
 }
 
 /* ============ Persistenz: localStorage + GitHub ============ */
@@ -1270,8 +1380,12 @@ function wire(){
   $("#ratio").onchange=e=>{DATA.ratio=clamp(+e.target.value||10,6,15);persist();renderPersonal();};
   $("#social").onchange=e=>{DATA.social=clamp(+e.target.value||20,0,40);persist();renderPersonal();};
   $("#btnResetPins").onclick=()=>{DATA.tours.forEach(t=>t.persons=PERS[t.eq]);persist();renderAll();flash("Personal zurückgesetzt");};
-  $("#btnAddStaff").onclick=()=>{DATA.staff=DATA.staff||[];DATA.staff.push({name:"Neue Person",tid:DATA.tours[0].id,wageMt:DATA.wages.tag,bg:100,fiktiv:false});persist();renderStaff();};
-  $("#btnGenStaff").onclick=()=>{if(DATA.staff&&DATA.staff.some(s=>!s.fiktiv)&&!confirm("Echte Mitarbeitende überschreiben?"))return;DATA.staff=fictitiousStaffList();persist();renderStaff();};
+  $("#btnAddStaff").onclick=()=>{DATA.staff=Array.isArray(DATA.staff)?DATA.staff:[];DATA.staff.push({name:"Neue Person",tid:DATA.tours[0]?.id||"",wageMt:DATA.wages.tag,bg:100,fiktiv:false});persist();renderStaff();};
+  $("#btnGenStaff").onclick=()=>{if(Array.isArray(DATA.staff)&&DATA.staff.some(s=>!s.fiktiv)&&!confirm("Echte Mitarbeitende überschreiben?"))return;DATA.staff=fictitiousStaffList();persist();renderStaff();};
+  $("#btnTplStaff").onclick=tplStaff;
+  $("#fileStaff").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyStaff);e.target.value="";};
+  $("#btnTplKunden").onclick=tplKunden;
+  $("#fileKunden").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyKunden);e.target.value="";};
   $("#fzkost").value=DATA.fzkost;
   // postMessage vom Dashboard
   window.addEventListener("message",ev=>{const d=ev.data||{};
