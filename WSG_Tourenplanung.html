@@ -1087,13 +1087,18 @@ function resetDefault(){DATA=emptyPlan();curTour=null;persist();renderAll();flas
 function gh(){try{return JSON.parse(localStorage.getItem("maintain_github")||"{}");}catch(e){return{};}}
 async function ghGet(path){
   const g=gh();if(!g.token)throw new Error("Kein PAT");
-  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}?ref=${g.branch||"main"}&t=${Date.now()}`,
-    {cache:"no-store",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"}});
-  if(r.status===404)return{sha:null,json:null};
-  if(!r.ok)throw new Error("GET "+r.status);
+  const url=`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}?ref=${g.branch||"main"}&t=${Date.now()}`;
+  const r=await fetch(url,{cache:"no-store",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"}});
+  if(r.status===404)return{sha:null,json:null,status:404};
+  if(!r.ok){const e=new Error("GET "+r.status);e.status=r.status;throw e;}
   const j=await r.json();
-  let json=null; try{ if(j.content) json=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,""))))); }catch(e){ json=null; } // leere/ungültige Datei → als leer behandeln
-  return {sha:j.sha||null,json};
+  let json=null;
+  if(j.content){ try{ json=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g,""))))); }catch(e){ json=null; } }
+  if(json===null){ // Inline-content leer/zu gross/Decode-Problem → Rohinhalt direkt holen (funktioniert auch für private Repos)
+    try{ const rr=await fetch(url,{cache:"no-store",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github.raw"}});
+      if(rr.ok){ json=JSON.parse(await rr.text()); } }catch(e){ json=null; }
+  }
+  return {sha:j.sha||null,json,status:200};
 }
 async function ghPut(path,obj,sha){
   const g=gh();
@@ -1117,7 +1122,8 @@ async function ghLoadPlan(){
   setSource("laden");
   try{const cur=await ghGet("data/WSG_plan_override.json");
     if(cur.json){DATA=cur.json;if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};curTour=DATA.tours[0]?.id;persist();renderAll();setSource("privat");flash("☁ Tourendaten aus privatem Repo geladen");}
-    else{setSource("leer");flash("⚠ data/WSG_plan_override.json fehlt im Repo "+g.owner+"/"+g.repo);}}
+    else if(cur.status===404){setSource("leer");flash("⚠ data/WSG_plan_override.json NICHT gefunden in "+g.owner+"/"+g.repo+" (Branch "+(g.branch||"main")+") — Pfad/Branch prüfen");}
+    else{setSource("fehler","unlesbar");flash("⚠ Datei gefunden, aber Inhalt nicht lesbar (kein gültiges JSON)");}}
   catch(e){setSource("fehler",e.message);flash("⚠ GitHub: "+e.message);}
 }
 
@@ -1212,7 +1218,8 @@ async function ghAutoLoad(){
     if(cur.json){ DATA=cur.json; if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};
       curTour=DATA.tours[0]?.id; persist(); renderAll(); setSource("privat");
       flash("☁ Tourendaten aus privatem Repo geladen"); }
-    else setSource("leer");
+    else if(cur.status===404) setSource("leer","data/WSG_plan_override.json nicht gefunden (Branch "+(g.branch||"main")+")");
+    else setSource("fehler","Datei gefunden, aber nicht lesbar");
   }catch(e){ setSource("fehler",e.message); }
 }
 
