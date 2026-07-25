@@ -1,0 +1,1223 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WSG Tourenplanung</title>
+<style>
+:root{
+  --bg:#0f1720; --panel:#16212e; --panel2:#1c2a3a; --line:#26384c; --ink:#e8eef5; --mut:#8ea3ba;
+  --acc:#3ea6ff; --ok:#38c172; --warn:#f0932b; --bad:#e74c3c; --tag:#243447;
+  --tag-tag:#2d5a8a; --tag-garten:#2f7d4f; --tag-abend:#7a4fae; --tag-ab:#8a5a2d;
+  --radius:12px; --sh:0 1px 2px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif}
+h1,h2,h3{margin:0 0 .4em}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);color:#04121f;border-color:var(--acc);font-weight:600}
+button.ghost{background:transparent}
+button.sm{padding:3px 8px;font-size:12px}
+select,input[type=text],input[type=number],input[type=time]{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+input[type=number]{width:74px}
+a{color:var(--acc)}
+.wrap{max-width:1280px;margin:0 auto;padding:14px}
+.viewbar{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,var(--bg),rgba(15,23,32,.86));backdrop-filter:blur(6px);display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.viewbar h2{margin:0;font-size:17px}
+.viewbar .sp{flex:1}
+.chapnav{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--line)}
+.chapnav button.on{background:var(--acc);color:#04121f;border-color:var(--acc)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--sh)}
+.grid{display:grid;gap:12px}
+.muted{color:var(--mut)}
+.chap{display:none}
+.chap.on{display:block}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;background:var(--tag);color:var(--mut)}
+.pill.tag{background:var(--tag-tag);color:#dbeaff}
+.pill.garten{background:var(--tag-garten);color:#dcf5e6}
+.pill.abend{background:var(--tag-abend);color:#efe1ff}
+.pill.ab{background:var(--tag-ab);color:#ffe9d1}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;font-size:13px}
+th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel)}
+tr:hover td{background:var(--panel2)}
+.tourgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.tourcard{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;cursor:pointer}
+.tourcard.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.tourcard .tt{font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px}
+.tourcard .row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
+.bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:var(--ok)}
+.bar.warn>i{background:var(--warn)}.bar.bad>i{background:var(--bad)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.kpi .box{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi .box b{font-size:22px;display:block}
+.kpi .box span{color:var(--mut);font-size:12px}
+.pickbar{position:sticky;top:52px;z-index:15;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.cal{overflow:auto}
+.calgrid{display:grid;grid-template-columns:52px repeat(5,1fr);gap:2px;min-width:720px}
+.calgrid .hd{font-size:12px;color:var(--mut);text-align:center;padding:4px;font-weight:600}
+.calcol{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:6px}
+.axis{position:relative}
+.axis span{position:absolute;right:4px;font-size:10px;color:var(--mut);transform:translateY(-50%)}
+.blk{position:absolute;left:2px;right:2px;border-radius:4px;padding:2px 4px;font-size:10px;overflow:hidden;color:#06121c;border:1px solid rgba(0,0,0,.15)}
+.blk small{display:block;opacity:.85;font-size:9px;line-height:1.15}
+.normline{position:absolute;left:0;right:0;border-top:1px dashed var(--bad);pointer-events:none}
+.normline span{position:absolute;left:2px;top:-11px;font-size:9px;color:var(--bad)}
+.strip{display:flex;gap:1px;margin-top:6px}
+.strip>i{flex:1;height:22px;border-radius:2px;background:var(--ok);cursor:pointer;position:relative}
+.strip>i.warn{background:var(--warn)}.strip>i.bad{background:var(--bad)}.strip>i.zero{background:var(--line)}
+.strip>i.sel{outline:2px solid var(--acc)}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}
+.legend b{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:3px}
+.cov{border-style:dashed!important;border-color:#fff!important}
+.hint{background:rgba(240,147,43,.14);border:1px solid var(--warn);color:#ffd9a8;border-radius:8px;padding:8px 10px;font-size:13px}
+.split{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}
+@media(max-width:900px){.split{grid-template-columns:1fr}.pickbar{top:0}}
+.mono{font-variant-numeric:tabular-nums}
+.good{color:var(--ok)}.over{color:var(--bad)}.mid{color:var(--warn)}
+.svgmap{width:100%;height:auto;background:var(--panel2);border-radius:10px;border:1px solid var(--line)}
+.svgmap circle{cursor:pointer}
+.dropzone{outline:2px dashed transparent}
+.tourcard.dz{outline:2px dashed var(--acc)}
+.foot{color:var(--mut);font-size:12px;text-align:center;padding:18px}
+.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.chk{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mut)}
+.flash{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--acc);border-radius:10px;padding:9px 16px;z-index:100;box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:.25s}
+.flash.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="chapnav" id="chapnav"></div>
+
+<div class="viewbar">
+  <h2 id="viewTitle">Tourenplan</h2>
+  <span class="pill" id="viewSub"></span>
+  <div class="sp"></div>
+  <span id="dataSrc" style="font-size:12px;color:var(--mut)" title="Woher die aktuellen Daten stammen">📭 leer</span>
+  <button class="primary" id="btnRefresh" title="Kompletten Plan ins private Repo speichern">🔄 Aktualisieren</button>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ LEER-ZUSTAND (kein Token / keine lokalen Daten) ============ -->
+  <div id="emptyState" style="display:none">
+    <div class="card" style="text-align:center;padding:40px 20px">
+      <div style="font-size:38px">📭</div>
+      <h2 style="margin:.4em 0">Keine Daten geladen</h2>
+      <p class="muted" style="max-width:520px;margin:0 auto 14px">
+        Diese App enthält bewusst keine echten Daten. Deine Touren, Objekte, Kunden und Löhne
+        liegen im <b>privaten Repo</b> und werden über deinen GitHub-Token geladen.</p>
+      <div class="toolbar" style="justify-content:center">
+        <button class="sm" id="btnEmptyDemo">▶ Demodaten laden (lokal, zum Ausprobieren)</button>
+        <button class="sm" id="btnEmptyDl">⬇ Demodaten als JSON (für privates Repo)</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:10px">
+        Token hinterlegst du im Cockpit → Reiter „GitHub-Sync". Danach lädt die App beim Öffnen automatisch aus dem privaten Repo.</p>
+    </div>
+  </div>
+
+  <!-- ============ TOURENPLAN ============ -->
+  <section class="chap on" data-chap="tourplan">
+    <div class="pickbar">
+      <b>TOUR WÄHLEN</b>
+      <button class="sm" id="tourPrev">‹</button>
+      <select id="tourSelect"></select>
+      <button class="sm" id="tourNext">›</button>
+      <span class="sp" style="flex:1"></span>
+      <span class="muted" id="kwLabel"></span>
+    </div>
+
+    <div class="kpi" id="planKpi" style="margin-bottom:12px"></div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">Alle Touren</h3>
+        <span class="sp" style="flex:1"></span>
+        <label class="chk">Fahrzeugkosten/Jahr <input type="number" id="fzkost" step="500"></label>
+        <button class="sm primary" id="btnOptimize" title="Objekte je Equipe lastbalanciert neu verteilen">🔄 Umplanen (optimieren)</button>
+        <button class="sm" data-add="tag">＋ Hauswart</button>
+        <button class="sm" data-add="garten">＋ Garten</button>
+        <button class="sm" data-add="abend">＋ Abend</button>
+      </div>
+      <div class="tourgrid" id="tourGrid" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h3 style="margin:0">Karte</h3>
+        <span class="sp" style="flex:1"></span>
+        <div class="tabs2" id="mapEquipe"></div>
+      </div>
+      <div id="mapBox"></div>
+      <div class="legend" id="mapLegend"></div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0" id="detailTitle">Tour-Detail</h3>
+          <span class="sp" style="flex:1"></span>
+          <button class="sm" id="kwDown">‹ KW</button>
+          <input type="number" id="kwInput" min="1" max="52" style="width:60px">
+          <button class="sm" id="kwUp">KW ›</button>
+        </div>
+        <div id="weekHint"></div>
+        <div class="cal" id="calendar" style="margin-top:8px"></div>
+        <div class="toolbar" style="margin-top:6px">
+          🖨
+          <span class="muted">Woche</span>
+          <input type="number" id="pdfFrom" min="1" max="52" style="width:56px">
+          <span class="muted">bis</span>
+          <input type="number" id="pdfTo" min="1" max="52" style="width:56px">
+          <button class="sm" id="btnPdf">PDF Tourenblatt</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Jahres-Auslastung</h3>
+        <div class="muted" style="font-size:12px">52 Wochen · rot = Überstundenwoche (&gt;42 h) · Klick öffnet Woche</div>
+        <div class="strip" id="yearStrip"></div>
+        <div style="margin-top:14px">
+          <h3>Einsätze dieser Woche <span class="muted" id="objCount"></span></h3>
+          <div class="muted" style="font-size:12px">Objekt auf eine andere Tour-Karte (gleiche Equipe) ziehen zum Umplanen.</div>
+          <div id="objList" style="margin-top:6px"></div>
+        </div>
+        <div class="toolbar">
+          <button class="sm" id="btnBrief">📋 Briefing anpassen</button>
+        </div>
+        <div id="briefCfg"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OBJEKTE ============ -->
+  <section class="chap" data-chap="objekte">
+    <div class="card">
+      <div class="toolbar">
+        <button class="sm" id="btnTplObj">⬇ Excel-Vorlage</button>
+        <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">➕ Objekte hinzufügen<input type="file" id="fileAppend" accept=".xlsx,.csv" hidden></label>
+        <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">♻ Alle ersetzen<input type="file" id="fileReplace" accept=".xlsx,.csv" hidden></label>
+        <span class="sp" style="flex:1"></span>
+        <span class="muted" id="objTotal"></span>
+      </div>
+      <div style="max-height:64vh;overflow:auto"><table id="objTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ FERIEN ============ -->
+  <section class="chap" data-chap="ferien">
+    <div class="card" style="margin-bottom:12px">
+      <h3>Firmen-Abwesenheit (Ziel: staffeln)</h3>
+      <div class="muted" style="font-size:12px">rot = viele Touren gleichzeitig abwesend</div>
+      <div class="strip" id="ferienCompany"></div>
+      <div class="toolbar">
+        <button class="sm" id="btnFerienAuto">↻ Automatisch verteilen</button>
+        <button class="sm" id="btnFerienClear">Leeren</button>
+        <button class="sm" id="btnTplFerien">⬇ Vorlage</button>
+        <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">⬆ Ferien-Excel<input type="file" id="fileFerien" accept=".xlsx,.csv" hidden></label>
+      </div>
+    </div>
+    <div class="card"><div id="ferienTours"></div></div>
+  </section>
+
+  <!-- ============ KUNDEN ============ -->
+  <section class="chap" data-chap="kunden">
+    <div class="card">
+      <h3>Kundenverzeichnis <span class="muted" id="kundenCount"></span></h3>
+      <div style="max-height:70vh;overflow:auto"><table id="kundenTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ PERSONAL ============ -->
+  <section class="chap" data-chap="personal">
+    <div class="kpi" id="persKpi" style="margin-bottom:12px"></div>
+    <div class="card" style="margin-bottom:12px">
+      <h3>Personalbedarf</h3>
+      <div class="toolbar">
+        <label class="chk">Field-to-Office-Ratio <input type="number" id="ratio" min="6" max="15" value="10"></label>
+        <label class="chk">Sozialkosten % <input type="number" id="social" min="0" max="40" step="1"></label>
+        <button class="sm" id="btnResetPins">👥 Personal automatisch</button>
+      </div>
+      <table id="needTable"></table>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <h3>Lohn-Benchmark (CHF/Monat, ×13)</h3>
+      <table id="wageTable"></table>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="margin:0">👤 Mitarbeitende</h3>
+        <span class="sp" style="flex:1"></span>
+        <button class="sm" id="btnAddStaff">＋ Person</button>
+        <button class="sm" id="btnGenStaff">👥 Fiktive aus Touren erzeugen</button>
+      </div>
+      <div id="staffWarn"></div>
+      <div style="overflow:auto;margin-top:8px"><table id="staffTable"></table></div>
+    </div>
+  </section>
+
+</div>
+
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · lokaler Stand + GitHub-Sync</div>
+<div class="flash" id="flash"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+/* =========================================================================
+   WSG Tourenplanung — reduziertes, zuverlässiges Kernmodell
+   ========================================================================= */
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const nf=(n,d=0)=>Number(n).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
+const chf=n=>"CHF "+nf(Math.round(n));
+
+/* ---- Konstanten (Regelwerk C1–C13) ---- */
+const HOME={lat:47.451,lon:8.585,name:"Kloten"};   // Hauptsitz
+const MAXMIN={tag:2520,garten:5040,abend:1350};    // Kapazität min/Woche je Tour (voll besetzt)
+const PERS={tag:1,garten:2,abend:1};               // Default Personen/Tour
+const MAXOBJ={tag:14,garten:22,abend:12};           // max. Objekte je Tour
+const PERPERSON={tag:2520,garten:2520,abend:1350};  // Kapazität min/Woche je Person
+const PACK_FACTOR=0.90;                             // Arbeitsanteil je Tour (Rest ~10% = Fahrzeit) → Ziel-Auslastung 90–100%
+const WEEKMIN=2520;                                 // 42 h = 100 % je Person
+const DAYTARGET=510;                                // Ø 8h24 je Werktag (min)
+const SOCIAL_DEF=20, FZKOST_DEF=8000;
+const WAGES_DEF={tag:5700,garten:5300,abend:4500,admin:6300};
+const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],admin:[5500,7200]};
+const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],work:[7.5,17]},
+          garten:{label:"Gartenequipe",short:"G",cls:"garten",win:[7.5,21],work:[7.5,17]},
+          abend:{label:"Abendreinigung",short:"A",cls:"abend",win:[17,21.5],work:[17,21.5]}};
+const SERVICE={ur:{label:"Unterhaltsreinigung",col:"#4aa3ff"},th:{label:"Techn. Hauswart",col:"#38c172"},
+               gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt",col:"#5fbf6b"},
+               win:{label:"Winterdienst",col:"#7fc7ff"}};
+// Feiertage ZH 2026 (KW) — Freitags-/Werktagsfeiertage
+const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Karfreitag"},
+  {kw:15,d:1,n:"Ostermontag"},{kw:18,d:5,n:"1.Mai"},{kw:20,d:4,n:"Auffahrt"},
+  {kw:22,d:1,n:"Pfingstmontag"},{kw:52,d:5,n:"Weihnachten"}];
+const holidaySet=new Set(HOLIDAYS.map(h=>h.kw+"-"+h.d));
+const WINTER_KW=w=>(w<=9||w>=48);
+// PLZ-Mittelpunkte (Region ZH/Glattal) für Geocoding-Fallback (C5/B5)
+const PLZLOC={"8302":[47.451,8.585],"8180":[47.521,8.539],"8152":[47.430,8.575],"8304":[47.412,8.596],
+  "8600":[47.397,8.618],"8610":[47.349,8.720],"8630":[47.257,8.853],"8105":[47.431,8.469],
+  "8305":[47.423,8.628],"8602":[47.410,8.640],"8102":[47.409,8.379],"8001":[47.372,8.540],
+  "8050":[47.412,8.548],"8404":[47.487,8.740],"8200":[47.696,8.633],"8400":[47.503,8.724]};
+function plzCentroid(plz){const p=PLZLOC[String(plz).trim()];
+  if(p)return{lat:+(p[0]+(Math.random()-0.5)*0.012).toFixed(4),lon:+(p[1]+(Math.random()-0.5)*0.012).toFixed(4),hit:true};
+  return{lat:+(47.42+(Math.random()-0.5)*0.14).toFixed(4),lon:+(8.58+(Math.random()-0.5)*0.20).toFixed(4),hit:false};}
+
+/* ---- Zustand ---- */
+let DATA=null, BRIEF={day:5,start:"15:00",len:60};
+let curView="tourplan", curTour=null, curKW=currentKW(), mapEq="tag";
+
+function currentKW(){const d=new Date(2026,6,24);const on=new Date(d.getFullYear(),0,1);
+  return clamp(Math.ceil((((d-on)/86400000)+on.getDay()+1)/7),1,52);}
+
+/* ============ Default-Plan generieren (deterministisch) ============ */
+function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+function cloneDefault(){return buildDefault();}
+
+function buildDefault(){
+  const r=rng(20260724);
+  const kunden=["Immobilien Zürichsee AG","Verwaltung Glattpark","Wohnbau Kloten Genossenschaft",
+    "Praxis am Bahnhof","Kanzlei Meier & Partner","Migros Filiale Bülach","Alterszentrum Rüti",
+    "Schulhaus Opfikon","Gewerbepark Wallisellen","Stiftung Wohnen ZH","Hausverwaltung Furrer",
+    "Klinik Sonnhalde","Büropark Dübendorf","Genossenschaft Talacker","Regionalspital Uster"];
+  const orte=[["Kloten",8102],["Bülach",8180],["Opfikon",8152],["Wallisellen",8304],["Dübendorf",8600],
+    ["Uster",8610],["Rüti",8630],["Regensdorf",8105],["Dietlikon",8305],["Wangen",8602]];
+  const objs=[];
+  const strassen=["Bahnhofstr.","Industriestr.","Dorfstr.","Feldweg","Rain","Seeweg","Wiesenstr.","Parkstr.","Schulstr.","Talacker"];
+  for(let i=0;i<120;i++){
+    const o=orte[Math.floor(r()*orte.length)];
+    const lat=47.35+ r()*0.22, lon=8.45+ r()*0.35;
+    // Kategorie: 62% Wohnliegenschaft (Tag) · 20% Büro/Gewerbe (Abend) · 18% Garten-Liegenschaft (Garten)
+    const rc=r(); const cat=rc<0.62?"wohn":rc<0.83?"buero":"garten";
+    const services=[]; let areaIn,areaGa=0,winter=false,type;
+    if(cat==="wohn"){                                  // Hauswart-Liegenschaft
+      type="Wohnliegenschaft"; areaIn=Math.round(300+r()*1200);
+      areaGa=r()<0.4?Math.round(60+r()*260):0;         // kleiner Vorplatz -> bleibt bei Tag
+      winter=r()<0.4;
+      const visits=r()<0.3?2:1;                        // 1–2× Treppenhaus/Allgemein je Woche
+      services.push({k:"ur",freq:52,min:Math.round(clamp(areaIn/9,90,240))*visits,abend:false});
+      services.push({k:"th",freq:52,min:Math.round(45+r()*45)});          // wöchentl. Kontrollgang
+      services.push({k:"gr",freq:4, min:Math.round(clamp(areaIn/8,140,320))});
+      if(areaGa>0) services.push({k:"ga",freq:14,min:Math.round((areaGa*1.0+200)/14)});
+    } else if(cat==="buero"){                          // Abendreinigung Büro/Gewerbe
+      type="Gewerbe/Büro"; areaIn=Math.round(500+r()*2500);
+      winter=r()<0.25;
+      const visits=r()<0.5?2:(r()<0.8?3:1);            // 1–3× wöchentl. Unterhaltsreinigung, abends
+      services.push({k:"ur",freq:52,min:Math.round(clamp(areaIn/11,140,400))*visits,abend:true});
+      services.push({k:"th",freq:12,min:Math.round(30+r()*30)});
+      services.push({k:"gr",freq:4, min:Math.round(clamp(areaIn/7,180,420))});
+    } else {                                           // Garten-Liegenschaft (Gartenequipe)
+      type="Wohnüberbauung mit Umschwung"; areaIn=Math.round(300+r()*900);
+      areaGa=Math.round(500+r()*1700); winter=r()<0.8;
+      const annual=Math.round(areaGa*1.7+900);         // Jahres-Gartenzeit
+      services.push({k:"ga",freq:18,min:Math.round(annual/18)});          // ~18 Saison-Einsätze
+      services.push({k:"th",freq:52,min:Math.round(40+r()*40)});          // Betreuung Umschwung
+      services.push({k:"ur",freq:52,min:Math.round(70+r()*70),abend:false});
+    }
+    if(winter) services.push({k:"win",freq:8,min:Math.round(35+r()*30)});
+    const ku=kunden[Math.floor(r()*kunden.length)];
+    objs.push({id:"OBJ-"+String(i+1).padStart(3,"0"),cat,
+      street:strassen[Math.floor(r()*strassen.length)]+" "+(1+Math.floor(r()*80)),
+      plz:o[1],ort:o[0],lat:+lat.toFixed(4),lon:+lon.toFixed(4),
+      type,areaIn,areaGa,winter,
+      kunde:ku,contact:["Fr. Weber","Hr. Suter","Fr. Brunner","Hr. Keller","Fr. Ott"][Math.floor(r()*5)],
+      email:"kontakt@"+ku.split(" ")[0].toLowerCase().replace(/[^a-z]/g,"")+".ch",
+      tel:"044 8"+String(10+Math.floor(r()*89))+" "+String(10+Math.floor(r()*89))+" "+String(10+Math.floor(r()*89)),
+      services});
+  }
+  // Touren anlegen
+  const tours=[];
+  const eqFor=o=>o.cat==="garten"?"garten":o.cat==="buero"?"abend":"tag";
+  // Je Equipe: Objekte auf möglichst wenige Touren zu je 90–100% packen (Next-Fit, geografisch),
+  // die letzte Tour trägt den Rest (C13). Tourenzahl ist damit aus der Last abgeleitet, nicht fix.
+  ["tag","garten","abend"].forEach(eq=>{
+    const group=objs.filter(o=>eqFor(o)===eq);
+    packBins(group,eq,[]).forEach((bin,i)=>tours.push({
+      id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:100,
+      vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin,ferienKW:[]}));
+  });
+  return {objs,tours,wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,
+    briefing:{...BRIEF},staff:null,ratio:10};
+}
+// Demodaten werden NUR auf Anforderung erzeugt (buildDefault), nicht beim Start – App startet leer.
+
+/* ============ Geometrie / Fahrzeit (C5) ============ */
+function distMin(a,b){ // Minuten Fahrzeit zwischen zwei Punkten
+  const dLat=(a.lat-b.lat), dLon=(a.lon-b.lon)*0.677;
+  const km=Math.sqrt(dLat*dLat+dLon*dLon)*111;
+  return km/28*60 + (km<0.05?2:3);
+}
+const objById=id=>DATA.objs.find(o=>o.id===id);
+
+/* ============ Wochen-Termine je Objekt (Frequenz -> KWs) ============ */
+function weeksFor(freq,seed){ // liefert Set von KWs (1..52) in denen ein Einsatz fällt
+  if(freq>=52) return null; // jede Woche
+  const step=52/freq, out=new Set(), off=(seed%Math.max(1,Math.round(step)));
+  for(let i=0;i<freq;i++) out.add(clamp(Math.round(off+i*step)+1,1,52));
+  return out;
+}
+// Minuten eines Objekts in einer bestimmten KW (für eine Tour-Equipe relevant)
+function objMinInWeek(o,kw,eq){
+  let m=0,idx=0;
+  for(const s of o.services){
+    idx++;
+    if(s.k==="ga"&& eq!=="garten") continue;
+    if(s.k==="win"){ if(!WINTER_KW(kw))continue; }
+    if(s.k==="ga" && (kw<12||kw>44)) continue; // Gartensaison
+    const wk=weeksFor(s.freq, o.id.charCodeAt(6)+idx);
+    if(wk===null || wk.has(kw)) m+=s.min;
+  }
+  return m;
+}
+
+/* ============ Tour-Wochenlast (Arbeit + Fahrt) ============ */
+function absentPersons(t,kw){ return t.ferienKW.filter(w=>w===kw).length; }
+function tourWorkMin(t,kw){ // reine Arbeitsminuten der eigenen Objekte in KW
+  let m=0; for(const id of t.objs){const o=objById(id); if(o) m+=objMinInWeek(o,kw,t.eq);} return m;
+}
+function tourDriveMin(t,kw,workObjs){ // Fahrzeit Kloten->1.->... (keine Rückfahrt)
+  const objs=(workObjs||t.objs.map(objById)).filter(Boolean).filter(o=>objMinInWeek(o,kw,t.eq)>0);
+  if(!objs.length) return 0;
+  // pro Werktag: nearest-neighbor Kette; Fahrt einmal pro Tag Home->1.
+  const order=nnOrder(objs);
+  let drive=distMin(HOME,order[0]);
+  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
+  // grob auf 5 Tage: Home-Anfahrt zählt einmal je Tag; Kette bleibt
+  return drive;
+}
+function nnOrder(objs){
+  const rest=[...objs], out=[]; let cur=HOME;
+  while(rest.length){let bi=0,bd=1e9;for(let i=0;i<rest.length;i++){const d=distMin(cur,rest[i]);if(d<bd){bd=d;bi=i;}}
+    cur=rest[bi];out.push(cur);rest.splice(bi,1);}
+  return out;
+}
+
+/* ============ Ferienabdeckung (C9a, invariant: Cap = availP*MAXMIN - travel) ============ */
+function computeCoverage(kw){
+  // liefert map tourId -> {block:bool, absent, avail, extraMin, from:[{objId,toTour}], banner}
+  const res={}; const eqGroups={};
+  DATA.tours.forEach(t=>{ (eqGroups[t.eq]=eqGroups[t.eq]||[]).push(t); res[t.id]={extra:0,taken:[]}; });
+  DATA.tours.forEach(t=>{
+    const absent=absentPersons(t,kw), avail=t.persons-absent;
+    res[t.id].absent=absent; res[t.id].avail=avail;
+    res[t.id].block=(avail<=0);
+    res[t.id].partial=(absent>0&&avail>0);
+  });
+  // Objekte voll abwesender Touren auf Equipe-Kollegen verteilen (Bin-Packing, grösste freie Kap zuerst)
+  DATA.tours.forEach(t=>{
+    if(res[t.id].avail>0) return;
+    const spill=[]; for(const id of t.objs){const o=objById(id); if(o&&objMinInWeek(o,kw,t.eq)>0) spill.push(o);}
+    const peers=eqGroups[t.eq].filter(p=>p.id!==t.id&&res[p.id].avail>0);
+    for(const o of spill.sort((a,b)=>objMinInWeek(b,kw,t.eq)-objMinInWeek(a,kw,t.eq))){
+      const need=objMinInWeek(o,kw,t.eq);
+      // freie Kapazität je Kollege bis 45h-Äquivalent der eigenen Schicht (Überstunden in Deckungswochen)
+      let best=null,bestFree=-1;
+      for(const p of peers){
+        const perCap=PERPERSON[p.eq]*45/42; // 45h-Deckel je Person (Tag/Garten 2700, Abend anteilig)
+        const load=(tourWorkMin(p,kw)+tourDriveMin(p,kw)+res[p.id].extra)/res[p.id].avail;
+        const free=perCap-load;
+        if(free>bestFree){bestFree=free;best=p;}
+      }
+      if(best&&bestFree>=need){res[best.id].extra+=need;res[best.id].taken.push({obj:o.id,from:t.id});}
+      else res[t.id].spillToAblose=(res[t.id].spillToAblose||0)+need;
+    }
+  });
+  return res;
+}
+
+/* ============ Auslastung je Woche (C9b) ============ */
+function tourLoad(t,kw,cov){ // Minuten/Person je Woche (Arbeit + Fahrt + übernommene Abdeckung)
+  const avail=t.persons-absentPersons(t,kw); if(avail<=0) return null;
+  return (tourWorkMin(t,kw)+tourDriveMin(t,kw)+(cov?(cov[t.id]?.extra||0):0))/avail;
+}
+// Auslastung = relativ zur eigenen Schichtkapazität (Tag/Garten 42h, Abend 22.5h) → 100% = Schicht voll
+function tourUtil(t,kw,cov){ const l=tourLoad(t,kw,cov); return l==null?0:l/PERPERSON[t.eq]*100; }
+function tourYear(t){ // Ø + Spitze (Auslastung) + Ø-Beschäftigungsgrad (FTE-Basis 42h)
+  let sumU=0,cnt=0,peak=0,sumF=0;
+  for(let w=1;w<=52;w++){const cov=computeCoverage(w);const l=tourLoad(t,w,cov);
+    if(l!=null){const u=l/PERPERSON[t.eq]*100; sumU+=u; sumF+=l/WEEKMIN; cnt++; peak=Math.max(peak,u);}}
+  return {avg:cnt?sumU/cnt:0, peak, fteAvg:cnt?sumF/cnt:0};
+}
+
+/* ============ Kosten / FTE ============ */
+// Beschäftigungsgrad des zugeteilten MA = tatsächliche Wochenstunden / 42h (Abend bleibt Teilzeit)
+function tourGrade(t){ return clamp(Math.round(tourYear(t).fteAvg*100/5)*5,0,100); }
+function costs(){
+  let fte=0,cost=0,over=0; const social=DATA.social/100;
+  DATA.tours.forEach(t=>{
+    const g=tourGrade(t)/100; const persFte=t.persons*g;
+    fte+=persFte;
+    cost+=DATA.wages[t.eq]*persFte*13*(1+social);
+  });
+  const field=Math.ceil(DATA.tours.reduce((a,t)=>a+t.persons,0));
+  const admin=Math.ceil(field/(DATA.ratio||10));
+  const adminCost=DATA.wages.admin*admin*13*(1+social);
+  const vehicles=DATA.tours.filter(t=>t.vehicle).length;
+  const fzTotal=vehicles*DATA.fzkost;
+  return {fte,fieldCost:cost,admin,adminCost,total:cost+adminCost,fzTotal,vehicles,field};
+}
+
+/* ============ Kalender-Belegung einer Woche (C1,C2,C7,C8) ============ */
+function briefLenFor(t){ return (t.briefing)?BRIEF.len:0; }
+function buildWeek(t,kw,cov){
+  // Liefert je Werktag (0..4) Array von Blöcken {startH,endH,label,sub,col,cls}
+  const days=[[],[],[],[],[]];
+  const eqw=EQ[t.eq];
+  const avail=t.persons-absentPersons(t,kw);
+  if(avail<=0){ // ganze Ferienwoche
+    const parts=[]; if(cov&&cov[t.id]?.spillToAblose) parts.push("Rest → Ablöse-Tour");
+    return {blocked:"🏖 Ferien",note:distribNote(t,kw,cov)};
+  }
+  // eigene Objekte dieser Woche
+  let objs=t.objs.map(objById).filter(Boolean).filter(o=>objMinInWeek(o,kw,t.eq)>0);
+  // Deckel maxUtil: gib Objekte ab, wenn über Deckel (nur Anzeigelogik minimal)
+  const order=nnOrder(objs);
+  // übernommene Ferienabdeckung
+  const taken=(cov&&cov[t.id]?.taken)||[];
+  // Wochentotal
+  let items=[];
+  const drivePre=order.length?distMin(HOME,order[0]):0;
+  order.forEach((o,i)=>{
+    const dr=i===0?distMin(HOME,o):distMin(order[i-1],o);
+    items.push({o,min:objMinInWeek(o,kw,t.eq),drive:dr,cov:false});
+  });
+  taken.forEach(tk=>{const o=objById(tk.obj);if(o)items.push({o,min:objMinInWeek(o,kw,t.eq),drive:6,cov:true,from:tk.from});});
+  const totalWork=items.reduce((a,x)=>a+x.min+x.drive,0)/avail;
+  // Feiertage dieser Woche
+  const holiDays=new Set(); HOLIDAYS.filter(h=>h.kw===kw).forEach(h=>holiDays.add(h.d-1));
+  const workDays=[0,1,2,3,4].filter(d=>!holiDays.has(d));
+  const briefLen=briefLenFor(t);
+  const briefDay=(BRIEF.day-1);
+  // Tagesziele gleichmässig (C2)
+  const weights=workDays.map(d=>DAYTARGET-((t.briefing&&d===briefDay&&!holiDays.has(briefDay))?briefLen:0));
+  const wsum=weights.reduce((a,b)=>a+b,0);
+  const perDayTarget=workDays.map((d,i)=>totalWork*weights[i]/wsum);
+  // Fülle Tag für Tag
+  let queue=items.slice();
+  const [ws,we]=eqw.work;
+  const dayDrive=[];   // Home → erstes Objekt je Werktag (Anfahrt)
+  workDays.forEach((d,i)=>{
+    let cursor=ws, filled=0; const target=perDayTarget[i]; let firstOfDay=true;
+    while(queue.length && filled< target-1){
+      const it=queue[0];
+      if(firstOfDay){ dayDrive[d]=distMin(HOME,it.o); firstOfDay=false; }
+      const cont=!!it._started;                 // schon an einem Vortag/vorher begonnen
+      const need=(it._rest!=null?it._rest:it.min+it.drive);
+      const room=target-filled;
+      const place=Math.min(need,room);
+      // Zeit setzen mit Mittagspause 12-13
+      let segStart=cursor, remaining=place;
+      const seg=[];
+      while(remaining>0){
+        if(t.eq!=="abend"){
+          if(segStart<12 && segStart+remaining/60>12){ // splittet über Mittag
+            const before=(12-segStart)*60;
+            seg.push([segStart,12]); remaining-=before; segStart=13;
+            continue;
+          }
+          if(segStart>=12&&segStart<13) segStart=13;
+        }
+        const endH=segStart+remaining/60;
+        seg.push([segStart,endH]); segStart=endH; remaining=0;
+      }
+      cursor=seg[seg.length-1][1];
+      const svc=dominantService(it.o,kw,t.eq); const col=SERVICE[svc]?.col||"#4aa3ff";
+      seg.forEach((sg,si)=>{
+        const isCont=cont||si>0;
+        days[d].push({s:sg[0],e:sg[1],oid:it.o.id,cov:!!it.cov,
+          label:(it.cov?"🔁 ":"")+(isCont?"↪ ":"")+it.o.id+(it.cov?(" · Ablöse "+it.from):""),
+          sub:isCont?"(Forts.) "+it.o.street:(it.o.street+" · "+it.o.kunde+" · "+Math.round(it.min)+"′"),
+          title:(isCont?"Fortsetzung vom Vortag · ":"")+it.o.plz+" "+it.o.ort+" · "+(SERVICE[svc]?.label||""),
+          col, cls:it.cov?"cov":""});
+        it._started=true;
+      });
+      filled+=place;
+      if(place>=need){queue.shift();} else {it._rest=need-place; break;}
+    }
+    // Briefing
+    if(t.briefing && d===briefDay && !holiDays.has(briefDay)){
+      const bs=parseFloat(BRIEF.start.split(":")[0])+parseFloat(BRIEF.start.split(":")[1])/60;
+      days[d].push({s:bs,e:bs+briefLen/60,label:"📋 Briefing",sub:"Hauptsitz Kloten",col:"#f0932b",cls:"brief",title:"Freitags-Briefing Hauptsitz Kloten"});
+    }
+  });
+  return {days,drivePre,dayDrive,totalWork,holiDays,workDays};
+}
+function dominantService(o,kw,eq){let best="ur",bm=0;o.services.forEach(s=>{
+  if(s.k==="ga"&&eq!=="garten")return; if(s.k==="win"&&!WINTER_KW(kw))return;
+  if(s.min>bm){bm=s.min;best=s.k;}});return best;}
+function distribNote(t,kw,cov){
+  const c=cov&&cov[t.id]; if(!c)return"";
+  const targets={}; DATA.tours.forEach(p=>{(cov[p.id]?.taken||[]).forEach(tk=>{if(tk.from===t.id)targets[p.id]=(targets[p.id]||0)+1;});});
+  const parts=Object.entries(targets).map(([k,v])=>v+" → "+k);
+  if(c.spillToAblose) parts.push("Rest → Ablöse-Tour");
+  return parts.length?("Verteilt: "+parts.join(" · ")):"";
+}
+
+/* ============ Rendering: Tour-Karten ============ */
+function tourLabel(t){return EQ[t.eq].label.split(" / ")[0];}
+function renderTourGrid(){
+  const box=$("#tourGrid"); box.innerHTML="";
+  DATA.tours.forEach(t=>{
+    const y=tourYear(t);
+    const card=document.createElement("div");
+    card.className="tourcard"+(curTour===t.id?" sel":"");
+    card.dataset.tour=t.id;
+    const cls=y.avg>100?"bad":y.avg>90?"":"warn";
+    card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
+      <div class="row muted">${t.objs.length} Objekte · ${t.persons} P</div>
+      <div class="bar ${cls}"><i style="width:${clamp(y.avg,0,140)/1.4}%"></i></div>
+      <div class="row" style="font-size:12px"><span class="${y.avg>100?'over':y.avg>90?'good':'mid'}">Ø ${nf(y.avg)}%</span>
+        <span class="muted">· Spitze ${nf(y.peak)}%</span></div>
+      <div class="row">
+        <button class="sm" data-p="-1">−</button><span>${t.persons} P</span><button class="sm" data-p="1">+</button>
+        <label class="chk">max% <input type="number" class="maxu" value="${t.maxUtil}" style="width:56px"></label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" class="veh" ${t.vehicle?"checked":""}>🚗</label>
+        <label class="chk"><input type="checkbox" class="brf" ${t.briefing?"checked":""}>📋</label>
+        <span class="sp" style="flex:1"></span>
+        <button class="sm" data-del="1" title="Tour löschen">✕</button>
+      </div>`;
+    card.addEventListener("click",e=>{if(e.target.closest("button,input,label"))return;selectTour(t.id);});
+    card.querySelector('[data-p="-1"]').onclick=e=>{e.stopPropagation();setPersons(t,-1);};
+    card.querySelector('[data-p="1"]').onclick=e=>{e.stopPropagation();setPersons(t,1);};
+    card.querySelector(".maxu").onchange=e=>{setMaxUtil(t,+e.target.value||100);};
+    card.querySelector(".veh").onchange=e=>{t.vehicle=e.target.checked;persist();renderPlanKpi();};
+    card.querySelector(".brf").onchange=e=>{t.briefing=e.target.checked;persist();renderDetail();};
+    card.querySelector('[data-del="1"]').onclick=e=>{e.stopPropagation();delTour(t.id);};
+    // Drag & Drop Ziel
+    card.addEventListener("dragover",e=>{const src=objById(window._dragObj);if(src){const st=DATA.tours.find(x=>x.objs.includes(src.id));if(st&&st.eq===t.eq){e.preventDefault();card.classList.add("dz");}}});
+    card.addEventListener("dragleave",()=>card.classList.remove("dz"));
+    card.addEventListener("drop",e=>{e.preventDefault();card.classList.remove("dz");moveObj(window._dragObj,t.id);});
+    box.appendChild(card);
+  });
+}
+function setPersons(t,d){t.persons=clamp(t.persons+d,1,6);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
+function setMaxUtil(t,v){t.maxUtil=clamp(v,50,140);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
+
+/* ============ Umplanen / Packen (C13): Touren nacheinander auf 90–100% füllen ============ */
+function weeklyAvgMin(o,eq){                          // Jahres-Wochen-Ø eines Objekts (Arbeit, ohne Fahrt)
+  return o.services.reduce((a,s)=>{
+    if(s.k==="ga"&&eq!=="garten")return a;
+    return a+(s.freq>=52?s.min:s.min*s.freq/52);
+  },0);
+}
+// Ziel-Arbeitsminuten je Tour, damit Auslastung (Arbeit+Fahrt) ~ maxUtil landet
+function workCapOf(persons,eq,maxUtil){ return persons*PERPERSON[eq]*(maxUtil/100)*PACK_FACTOR; }
+// Next-Fit-Packung entlang geografischer Kette ab Kloten:
+// füllt Tour 1 bis ~Ziel, dann Tour 2 … die letzte Tour trägt den Rest (tiefere Auslastung)
+function packBins(objs,eq,caps){
+  const order=nnOrder(objs); const bins=[]; let cur=[],load=0,bi=0;
+  const capAt=i=>caps[i]!=null?caps[i]:workCapOf(PERS[eq],eq,100);   // Überlauf-Tour = Standardbesetzung
+  order.forEach(o=>{
+    const m=weeklyAvgMin(o,eq);
+    if(cur.length && (load+m>capAt(bi) || cur.length>=MAXOBJ[eq])){ bins.push(cur); cur=[]; load=0; bi++; }
+    cur.push(o.id); load+=m;
+  });
+  if(cur.length) bins.push(cur);
+  return bins;
+}
+function packEquipe(eq){
+  const existing=DATA.tours.filter(t=>t.eq===eq);
+  const objs=[]; existing.forEach(t=>t.objs.forEach(id=>{const o=objById(id);if(o)objs.push(o);}));
+  if(!objs.length) return;
+  const caps=existing.map(t=>workCapOf(t.persons,eq,t.maxUtil));
+  const bins=packBins(objs,eq,caps);
+  const rebuilt=bins.map((bin,i)=>{const e=existing[i];
+    return {id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,
+      persons:e?e.persons:PERS[eq], maxUtil:e?e.maxUtil:100,
+      vehicle:e?e.vehicle:(eq!=="abend"), briefing:e?e.briefing:(eq!=="abend"),
+      ferienKW:e?e.ferienKW:[], objs:bin};});
+  DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
+  reorderTours();
+}
+function reorderTours(){const rank={tag:0,garten:1,abend:2};
+  DATA.tours.sort((a,b)=>(rank[a.eq]-rank[b.eq])||a.id.localeCompare(b.id));}
+function ensureCurTour(){ if(!DATA.tours.find(t=>t.id===curTour)) curTour=DATA.tours[0]?.id; }
+function redistributeCrew(eq){ packEquipe(eq); }       // Personal-/Deckeländerung → neu packen
+function optimizeAll(){
+  ["tag","garten","abend"].forEach(packEquipe);
+  persist(); ensureCurTour(); renderAll();
+  flash("🔄 Gepackt: Tour 1…N auf 90–100 %, Rest-Tour trägt den Überhang");
+}
+
+function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))return;
+  DATA.tours=DATA.tours.filter(t=>t.id!==id);if(curTour===id)curTour=DATA.tours[0]?.id;persist();renderAll();}
+function addTour(eq){let n=1;while(DATA.tours.find(t=>t.id===EQ[eq].short+String(n).padStart(2,"0")))n++;
+  DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:100,vehicle:eq!=="abend",briefing:eq!=="abend",objs:[],ferienKW:[]});persist();renderAll();}
+function moveObj(objId,toTour){const from=DATA.tours.find(t=>t.objs.includes(objId));const to=DATA.tours.find(t=>t.id===toTour);
+  if(!from||!to||from.id===to.id)return;from.objs=from.objs.filter(x=>x!==objId);to.objs.push(objId);persist();renderAll();flash("Objekt "+objId+" → "+to.id);}
+
+/* ============ Tour-Auswahl ============ */
+function fillTourSelect(){
+  const sel=$("#tourSelect");sel.innerHTML="";
+  const groups={tag:"Hauswart",garten:"Garten",abend:"Abend"};
+  ["tag","garten","abend"].forEach(eq=>{
+    const g=document.createElement("optgroup");g.label=groups[eq];
+    DATA.tours.filter(t=>t.eq===eq).forEach(t=>{const o=document.createElement("option");o.value=t.id;o.textContent=t.id+" · "+t.objs.length+" Obj";g.appendChild(o);});
+    sel.appendChild(g);
+  });
+  sel.value=curTour;
+}
+function selectTour(id){curTour=id;$("#tourSelect").value=id;renderTourGrid();renderDetail();renderPlanKpi();}
+
+/* ============ KPIs Tourenplan ============ */
+function renderPlanKpi(){
+  const c=costs();
+  const objs=DATA.objs.length, tours=DATA.tours.length;
+  $("#planKpi").innerHTML=`
+    <div class="box"><b>${tours}</b><span>Touren</span></div>
+    <div class="box"><b>${objs}</b><span>Objekte</span></div>
+    <div class="box"><b>${nf(c.fte,1)}</b><span>Feld-FTE</span></div>
+    <div class="box"><b>${c.vehicles}</b><span>Fahrzeuge · ${chf(c.fzTotal)}</span></div>
+    <div class="box"><b>${chf(c.total)}</b><span>Personalkosten/Jahr</span></div>`;
+}
+
+/* ============ Detail + Kalender ============ */
+function renderDetail(){
+  const t=DATA.tours.find(x=>x.id===curTour); if(!t){$("#calendar").innerHTML="";return;}
+  $("#detailTitle").textContent="Tour "+t.id+" · "+tourLabel(t);
+  $("#kwInput").value=curKW; $("#kwLabel").textContent="KW "+curKW+" / 2026";
+  const cov=computeCoverage(curKW);
+  const wk=buildWeek(t,curKW,cov);
+  // week hint
+  let hint="";
+  if(cov[t.id]?.partial) hint=`<div class="hint">Teil-Abwesenheit (${cov[t.id].absent} P weg) — verbleibende Person übernimmt die Route.</div>`;
+  if(HOLIDAYS.some(h=>h.kw===curKW)) hint+=`<div class="hint">Feiertag in dieser Woche: Arbeit verteilt sich auf die übrigen Werktage.</div>`;
+  $("#weekHint").innerHTML=hint;
+  renderCalendar(t,wk);
+  renderYearStrip(t);
+  renderObjList(t);
+}
+function renderCalendar(t,wk){
+  const box=$("#calendar");
+  const eqw=EQ[t.eq]; const H=560, top=6, [ax0,ax1]=[6,23];
+  const y=h=>top+(h-ax0)/(ax1-ax0)*H;
+  if(wk.blocked){
+    box.innerHTML=`<div class="card" style="text-align:center;padding:30px">
+      <div style="font-size:20px">${wk.blocked}</div>
+      <div class="muted" style="margin-top:8px">${wk.note||"Ganze Tour abwesend — Woche geblockt."}</div></div>`;
+    return;
+  }
+  const days=["Mo","Di","Mi","Do","Fr"];
+  let axis='<div class="axis" style="height:'+(H+top+14)+'px">';
+  for(let h=ax0;h<=ax1;h++) axis+=`<span style="top:${y(h)}px">${h}:00</span>`;
+  axis+="</div>";
+  let cols="";
+  for(let d=0;d<5;d++){
+    const isHoli=wk.holiDays.has(d);
+    let inner="";
+    // Normlinien
+    if(!isHoli){
+      eqw.work.forEach((h,i)=>{const yy=y(h);inner+=`<div class="normline" style="top:${yy}px"><span>${i===0?(t.eq==='abend'?'17:00':'07:30'):(t.eq==='abend'?'21:30':'16:54')}</span></div>`;});
+      if(t.eq!=="abend"){const yy=y(16.9);inner+=`<div class="normline" style="top:${yy}px"></div>`;}
+    }
+    if(isHoli){
+      const hn=HOLIDAYS.find(h=>h.kw===curKW&&h.d===d+1);
+      inner+=`<div style="position:absolute;top:40%;left:0;right:0;text-align:center;color:var(--mut)">🎌 ${hn?hn.n:"Feiertag"}</div>`;
+    } else {
+      (wk.days[d]||[]).forEach(b=>{
+        const yy=y(b.s), hh=Math.max(10,(b.e-b.s)/(ax1-ax0)*H);
+        const drag=(b.oid&&!b.cov)?`draggable="true" data-oid="${b.oid}" style="cursor:grab;`:`style="`;
+        inner+=`<div class="blk ${b.cls}" ${drag}top:${yy}px;height:${hh}px;background:${b.col}" title="${(b.title||'').replace(/"/g,'')}">${b.label}<small>${b.sub||""}</small></div>`;
+      });
+    }
+    const drv=isHoli?0:(wk.dayDrive[d]||0);
+    const drive=drv?` <span class="muted" title="Anfahrt Kloten → 1. Objekt">🚗 ${Math.round(drv)}′</span>`:"";
+    cols+=`<div><div class="hd">${days[d]}${drive}</div><div class="calcol" style="height:${H+top}px">${inner}</div></div>`;
+  }
+  box.innerHTML=`<div class="calgrid"><div><div class="hd"></div>${axis}</div>${cols}</div>`;
+  // Kalenderblöcke als Drag-Quelle (Umplanen auf andere Tour-Karte gleicher Equipe)
+  $$('#calendar .blk[data-oid]').forEach(el=>{
+    el.addEventListener("dragstart",()=>{window._dragObj=el.dataset.oid;el.style.opacity=".5";});
+    el.addEventListener("dragend",()=>{el.style.opacity="";});
+  });
+}
+function renderYearStrip(t){
+  const box=$("#yearStrip");box.innerHTML="";
+  for(let w=1;w<=52;w++){
+    const cov=computeCoverage(w);const u=tourUtil(t,w,cov);const av=t.persons-absentPersons(t,w);
+    const i=document.createElement("i");
+    i.className=(av<=0?"zero":u>100?"bad":u>90?"":"warn")+(w===curKW?" sel":"");
+    i.title="KW "+w+": "+(av<=0?"Ferien":nf(u)+"%");
+    i.onclick=()=>{curKW=w;renderDetail();};
+    box.appendChild(i);
+  }
+}
+function renderObjList(t){
+  const cov=computeCoverage(curKW);
+  const objs=t.objs.map(objById).filter(Boolean).filter(o=>objMinInWeek(o,curKW,t.eq)>0);
+  $("#objCount").textContent="("+objs.length+")";
+  const box=$("#objList");box.innerHTML="";
+  objs.forEach(o=>{
+    const d=document.createElement("div");d.className="pill";d.draggable=true;
+    d.style.cssText="display:block;margin:3px 0;padding:5px 8px;cursor:grab;background:var(--panel2);color:var(--ink)";
+    d.textContent=o.id+" · "+o.street+" · "+o.kunde+" · "+Math.round(objMinInWeek(o,curKW,t.eq))+"′";
+    d.addEventListener("dragstart",()=>{window._dragObj=o.id;});
+    box.appendChild(d);
+  });
+  const taken=cov[t.id]?.taken||[];
+  if(taken.length){const h=document.createElement("div");h.className="muted";h.style.marginTop="6px";
+    h.textContent="🔁 übernommen: "+taken.map(x=>x.obj+" ("+x.from+")").join(", ");box.appendChild(h);}
+}
+
+/* ============ Karte (SVG) ============ */
+function renderMap(){
+  if(!DATA.objs.length){$("#mapEquipe").innerHTML="";$("#mapBox").innerHTML="";$("#mapLegend").innerHTML="";return;}
+  $("#mapEquipe").innerHTML=["tag","garten","abend"].map(e=>`<button class="sm ${mapEq===e?'':'ghost'}" data-eq="${e}">${EQ[e].label.split(" ")[0]}</button>`).join("");
+  $$("#mapEquipe button").forEach(b=>b.onclick=()=>{mapEq=b.dataset.eq;renderMap();});
+  const tours=DATA.tours.filter(t=>t.eq===mapEq);
+  const cols=["#4aa3ff","#38c172","#f0932b","#e74c3c","#9b6bff","#1abc9c","#e67e22","#3498db","#e84393","#00b894","#fdcb6e","#6c5ce7"];
+  const lats=DATA.objs.map(o=>o.lat),lons=DATA.objs.map(o=>o.lon);
+  const la0=Math.min(...lats),la1=Math.max(...lats),lo0=Math.min(...lons),lo1=Math.max(...lons);
+  const W=1000,Hh=460,pad=30;
+  const X=lo=>pad+(lo-lo0)/(lo1-lo0)*(W-2*pad);
+  const Y=la=>pad+(la1-la)/(la1-la0)*(Hh-2*pad);
+  let dots="";
+  DATA.objs.forEach(o=>{
+    const ti=tours.findIndex(t=>t.objs.includes(o.id));
+    const inEq=ti>=0;
+    dots+=`<circle cx="${X(o.lon).toFixed(1)}" cy="${Y(o.lat).toFixed(1)}" r="${inEq?5:2.5}" fill="${inEq?cols[ti%cols.length]:'#33465c'}" opacity="${inEq?0.95:0.35}"><title>${o.id} · ${o.ort}</title></circle>`;
+  });
+  const home=`<circle cx="${X(HOME.lon)}" cy="${Y(HOME.lat)}" r="7" fill="#fff" stroke="#04121f"/><text x="${X(HOME.lon)+10}" y="${Y(HOME.lat)+4}" fill="#fff" font-size="12">Kloten</text>`;
+  $("#mapBox").innerHTML=`<svg class="svgmap" viewBox="0 0 ${W} ${Hh}">${dots}${home}</svg>`;
+  $("#mapLegend").innerHTML=tours.map((t,i)=>`<span data-tour="${t.id}" style="cursor:pointer"><b style="background:${cols[i%cols.length]}"></b>${t.id} (${t.objs.length})</span>`).join("");
+  $$("#mapLegend span").forEach(s=>s.onclick=()=>selectTour(s.dataset.tour));
+}
+
+/* ============ Objekte-Ansicht ============ */
+function renderObjekte(){
+  $("#objTotal").textContent=DATA.objs.length+" Objekte";
+  const tbl=$("#objTable");
+  const opts=eq=>DATA.tours.filter(t=>t.eq===eq).map(t=>t.id);
+  let h=`<thead><tr><th>ID</th><th>Adresse</th><th>Ort</th><th>Typ</th><th>m² innen</th><th>Garten</th><th>Kunde</th><th>Tour</th></tr></thead><tbody>`;
+  DATA.objs.forEach(o=>{
+    const cur=DATA.tours.find(t=>t.objs.includes(o.id));
+    const eq=cur?cur.eq:"tag";
+    let sel=`<select data-obj="${o.id}">`;
+    ["tag","garten","abend"].forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
+    sel+=`</select>`;
+    h+=`<tr><td class="mono">${o.id}</td><td>${o.street}</td><td>${o.plz} ${o.ort}</td><td>${o.type}</td><td>${o.areaIn}</td><td>${o.areaGa||"–"}</td><td>${o.kunde}</td><td>${sel}</td></tr>`;
+  });
+  h+="</tbody>";tbl.innerHTML=h;
+  $$("#objTable select").forEach(s=>s.onchange=()=>moveObj(s.dataset.obj,s.value));
+}
+
+/* ============ Ferien-Ansicht ============ */
+function renderFerien(){
+  const comp=$("#ferienCompany");comp.innerHTML="";
+  const perW=[];for(let w=1;w<=52;w++){perW[w]=DATA.tours.reduce((a,t)=>a+absentPersons(t,w),0);}
+  const mx=Math.max(1,...perW.filter(Boolean));
+  for(let w=1;w<=52;w++){const i=document.createElement("i");const r=perW[w]/mx;
+    i.className=r>0.66?"bad":r>0.33?"warn":perW[w]?"":"zero";i.title="KW "+w+": "+perW[w]+" P weg";comp.appendChild(i);}
+  const box=$("#ferienTours");box.innerHTML="";
+  DATA.tours.forEach(t=>{
+    const wrap=document.createElement("div");wrap.style.margin="10px 0";
+    const cnt=t.ferienKW.length;
+    wrap.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)} <span class="muted">${cnt} Wochen geplant (Ziel 4/Person)</span></div>`;
+    const strip=document.createElement("div");strip.className="strip";strip.style.flexWrap="wrap";
+    for(let w=1;w<=52;w++){const i=document.createElement("i");const on=t.ferienKW.includes(w);
+      i.style.flex="0 0 15px";i.className=on?"bad":"zero";i.title="KW "+w;
+      i.onclick=()=>{if(on)t.ferienKW.splice(t.ferienKW.indexOf(w),1);else t.ferienKW.push(w);persist();renderFerien();};
+      strip.appendChild(i);}
+    wrap.appendChild(strip);box.appendChild(wrap);
+  });
+}
+function ferienAuto(){
+  // gestaffelt: je Tour 4 Wochen, versetzt über KW 20..40 (Sommer), Garten meidet Saison-Spitze nicht
+  let offset=20;
+  DATA.tours.forEach((t,idx)=>{
+    t.ferienKW=[];const start=20+((idx*3)%18);
+    for(let k=0;k<4*t.persons;k++){t.ferienKW.push(clamp(start+Math.floor(k/t.persons),1,52));}
+  });
+  persist();renderFerien();flash("Ferien gestaffelt verteilt");
+}
+
+/* ============ Kunden-Ansicht ============ */
+function renderKunden(){
+  const map={};DATA.objs.forEach(o=>{(map[o.kunde]=map[o.kunde]||[]).push(o);});
+  const keys=Object.keys(map).sort();
+  $("#kundenCount").textContent="("+keys.length+")";
+  let h=`<thead><tr><th>Kunde</th><th>Ansprechperson</th><th>E-Mail</th><th>Tel.</th><th>Objekte</th></tr></thead><tbody>`;
+  keys.forEach(k=>{const o=map[k][0];h+=`<tr><td>${k}</td><td>${o.contact}</td><td>${o.email}</td><td class="mono">${o.tel}</td><td>${map[k].length}</td></tr>`;});
+  $("#kundenTable").innerHTML=h+"</tbody>";
+}
+
+/* ============ Personal-Ansicht ============ */
+function renderPersonal(){
+  const c=costs();
+  $("#persKpi").innerHTML=`
+    <div class="box"><b>${nf(c.fte,1)}</b><span>Feld-FTE</span></div>
+    <div class="box"><b>${c.field}</b><span>Feld-Köpfe</span></div>
+    <div class="box"><b>${c.admin}</b><span>Verwaltung (Ratio ${DATA.ratio})</span></div>
+    <div class="box"><b>${chf(c.fieldCost)}</b><span>Feld-Personalkosten</span></div>
+    <div class="box"><b>${chf(c.total)}</b><span>Total Personal/Jahr</span></div>`;
+  $("#ratio").value=DATA.ratio; $("#social").value=DATA.social;
+  // Bedarf je Equipe
+  const grp={tag:"Hauswart / Tagschicht",garten:"Gartenequipe",abend:"Abendreinigung"};
+  let nt=`<thead><tr><th>Equipe</th><th>Touren</th><th>Köpfe</th><th>FTE</th><th>Ø Auslastung</th></tr></thead><tbody>`;
+  ["tag","garten","abend"].forEach(eq=>{
+    const ts=DATA.tours.filter(t=>t.eq===eq);
+    const heads=ts.reduce((a,t)=>a+t.persons,0);
+    const fte=ts.reduce((a,t)=>a+t.persons*tourGrade(t)/100,0);
+    const avg=ts.length?ts.reduce((a,t)=>a+tourYear(t).avg,0)/ts.length:0;
+    nt+=`<tr><td>${grp[eq]}</td><td>${ts.length}</td><td>${heads}</td><td>${nf(fte,1)}</td><td class="${avg>100?'over':avg>90?'good':'mid'}">${nf(avg)}%</td></tr>`;
+  });
+  nt+=`<tr><td>Verwaltung/Backoffice</td><td>–</td><td>${c.admin}</td><td>${c.admin}.0</td><td class="muted">Ratio ${DATA.ratio}</td></tr>`;
+  $("#needTable").innerHTML=nt+"</tbody>";
+  // Benchmark
+  let wt=`<thead><tr><th>Rolle</th><th>Band</th><th>Default</th><th>Aktuell</th></tr></thead><tbody>`;
+  const roles={tag:"Hauswart / Tagschicht",garten:"Gärtner/in",abend:"Reinigung (Abend, GAV)",admin:"Backoffice / Verwaltung"};
+  Object.keys(roles).forEach(k=>{wt+=`<tr><td>${roles[k]}</td><td class="muted">${nf(WAGE_BANDS[k][0])}–${nf(WAGE_BANDS[k][1])}</td><td>${nf(WAGES_DEF[k])}</td><td><input type="number" data-wage="${k}" value="${DATA.wages[k]}" style="width:80px"></td></tr>`;});
+  $("#wageTable").innerHTML=wt+"</tbody>";
+  $$('#wageTable input').forEach(i=>i.onchange=()=>{DATA.wages[i.dataset.wage]=+i.value||0;persist();renderPersonal();});
+  renderStaff();
+}
+function fictitiousStaffList(){
+  const out=[];DATA.tours.forEach(t=>{const g=Math.round(tourGrade(t)/5)*5;
+    for(let p=0;p<t.persons;p++)out.push({name:"MA "+t.id+(t.persons>1?"-"+(p+1):""),tid:t.id,wageMt:DATA.wages[t.eq],bg:clamp(g,20,100),fiktiv:true});});
+  return out;
+}
+function renderStaff(){
+  if(!Array.isArray(DATA.staff)) DATA.staff=fictitiousStaffList();
+  const social=DATA.social/100;
+  let costTot=0,fteTot=0;
+  let h=`<thead><tr><th>Name</th><th>Tour</th><th>Obj</th><th>BG%</th><th>h/Wo</th><th>n.Planung</th><th>Jahres-Std Ist/Soll</th><th>%</th><th>Kosten/Jahr</th><th></th></tr></thead><tbody>`;
+  let warn=false;
+  DATA.staff.forEach((s,i)=>{
+    const t=DATA.tours.find(x=>x.id===s.tid);
+    const grade=t?tourGrade(t):0;
+    const hWo=s.bg/100*42;
+    const ist=t?annualWorkPP(t):0; const soll=s.bg/100*42*52;
+    const pct=soll?ist/soll*100:0; if(pct>105)warn=true;
+    const cost=s.wageMt*s.bg/100*13*(1+social);costTot+=cost;fteTot+=s.bg/100;
+    let opts="";["tag","garten","abend"].forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
+    h+=`<tr>
+      <td><input type="text" data-f="name" data-i="${i}" value="${s.name}" style="width:120px"></td>
+      <td><select data-f="tid" data-i="${i}">${opts}</select></td>
+      <td>${t?t.objs.length:"–"}</td>
+      <td><input type="number" data-f="bg" data-i="${i}" value="${s.bg}" style="width:56px"></td>
+      <td class="mono">${nf(hWo,1)}</td>
+      <td class="${grade>=s.bg?'good':'mid'}">${grade}%</td>
+      <td class="mono">${nf(ist)} / ${nf(soll)}</td>
+      <td class="${pct>105?'over':'good'}">${nf(pct)}%</td>
+      <td class="mono">${chf(cost)}</td>
+      <td><button class="sm" data-del="${i}">✕</button></td></tr>`;
+  });
+  h+=`<tr><td colspan="8" style="text-align:right"><b>Total</b></td><td class="mono"><b>${chf(costTot)}</b></td><td></td></tr>`;
+  $("#staffTable").innerHTML=h+"</tbody>";
+  $("#staffWarn").innerHTML=warn?`<div class="hint">Mind. eine Person &gt;105 % Jahres-Soll — Pensum erhöhen oder Tour entlasten.</div>`:"";
+  $$('#staffTable [data-f]').forEach(el=>el.onchange=()=>{const s=DATA.staff[+el.dataset.i];const f=el.dataset.f;
+    s[f]=(f==="bg")?clamp(+el.value||0,0,100):el.value;s.fiktiv=false;persist();renderStaff();});
+  $$('#staffTable [data-del]').forEach(b=>b.onclick=()=>{DATA.staff.splice(+b.dataset.del,1);persist();renderStaff();});
+}
+function annualWorkPP(t){
+  let sum=0;for(let w=1;w<=52;w++){if(t.persons-absentPersons(t,w)<=0)continue;
+    const cov=computeCoverage(w);sum+=(tourWorkMin(t,w)+tourDriveMin(t,w)+(cov[t.id]?.extra||0));}
+  return sum/t.persons/60 + HOLIDAYS.length*8.4;
+}
+
+/* ============ Briefing-Konfig ============ */
+function renderBriefCfg(show){
+  const box=$("#briefCfg");
+  if(!show){box.innerHTML="";return;}
+  box.innerHTML=`<div class="card" style="margin-top:8px">
+    <div class="toolbar">
+      <label class="chk">Tag <select id="bfDay">${["Mo","Di","Mi","Do","Fr"].map((d,i)=>`<option value="${i+1}" ${BRIEF.day===i+1?"selected":""}>${d}</option>`).join("")}</select></label>
+      <label class="chk">Start <input type="time" id="bfStart" value="${BRIEF.start}"></label>
+      <label class="chk">Länge <input type="number" id="bfLen" value="${BRIEF.len}" style="width:60px"> min</label>
+      <button class="sm primary" id="bfSave">Speichern</button>
+    </div><div class="muted" style="font-size:12px">Gilt für alle Touren mit aktivem 📋.</div></div>`;
+  $("#bfSave").onclick=()=>{BRIEF={day:+$("#bfDay").value,start:$("#bfStart").value,len:+$("#bfLen").value||60};
+    DATA.briefing={...BRIEF};persist();renderBriefCfg(false);renderDetail();flash("Briefing gespeichert");};
+}
+
+/* ============ PDF ============ */
+function printCalendar(tid,von,bis){
+  const t=DATA.tours.find(x=>x.id===tid);if(!t)return;
+  von=clamp(von,1,52);bis=clamp(bis,von,52);
+  let pages="";
+  for(let w=von;w<=bis;w++){
+    const cov=computeCoverage(w);const wk=buildWeek(t,w,cov);
+    const days=["Mo","Di","Mi","Do","Fr"];
+    let body="";
+    if(wk.blocked){body=`<div style="padding:40px;text-align:center;font-size:20px">${wk.blocked}<br><span style="font-size:13px;color:#555">${wk.note||""}</span></div>`;}
+    else{
+      body='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">';
+      for(let d=0;d<5;d++){
+        const holi=wk.holiDays.has(d);
+        body+=`<div style="border:1px solid #ccc;border-radius:4px;padding:4px;min-height:200px"><b>${days[d]}</b>`;
+        if(holi)body+='<div style="color:#900">🎌 Feiertag</div>';
+        else (wk.days[d]||[]).forEach(b=>{body+=`<div style="background:${b.col};color:#06121c;border-radius:3px;padding:2px 4px;margin:2px 0;font-size:10px">${b.label}<br><span style="font-size:9px">${b.sub||""}</span></div>`;});
+        body+="</div>";
+      }
+      body+="</div>";
+    }
+    pages+=`<section style="page-break-after:always;padding:6mm">
+      <h2 style="margin:0">Tour ${t.id} · ${tourLabel(t)}</h2>
+      <div style="color:#555;margin-bottom:6px">KW ${w} / 2026 · ${t.persons} Person(en) · ${t.briefing?"Briefing an":"kein Briefing"}</div>${body}</section>`;
+  }
+  const win=window.open("","_blank");
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Tourenblatt ${t.id}</title>
+    <style>@page{size:A4 landscape;margin:6mm}body{font:11px system-ui;margin:0;color:#111}h2{font-size:16px}</style></head>
+    <body onload="window.print()">${pages}</body></html>`);
+  win.document.close();
+}
+
+/* ============ Excel Vorlagen & Import (SheetJS) ============ */
+function dl(wb,name){XLSX.writeFile(wb,name);}
+function tplObjekte(){
+  const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein","Unterhalt Freq/Jahr","Unterhalt Min","Hauswart Freq/Jahr","Hauswart Min","Grundr. Freq/Jahr","Grundr. Min","Winterdienst (ja/nein)","Bemerkungen"];
+  const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnliegenschaft","520","300","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","","52","40","12","30","4","90","ja",""];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");dl(wb,"Vorlage_Objekte_Komplett.xlsx");
+}
+function tplFerien(){
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Tour","KW von","KW bis","Person","Bemerkung"],["H01","28","31","1","Sommer"]]),"Ferien");dl(wb,"Vorlage_Ferien_Import.xlsx");
+}
+function parseFile(file,cb){
+  const rd=new FileReader();
+  rd.onload=e=>{const wb=XLSX.read(e.target.result,{type:"binary"});const ws=wb.Sheets[wb.SheetNames[0]];
+    cb(XLSX.utils.sheet_to_json(ws,{defval:""}));};
+  rd.readAsBinaryString(file);
+}
+function rowToObj(r){
+  const g=(...k)=>{for(const x of k)if(r[x]!==undefined&&r[x]!=="")return r[x];return"";};
+  const areaIn=+g("Fläche innen (m²)","areaIn")||300, areaGa=+g("Gartenfläche (m²)")||0;
+  // Lat/Lon: Excel-Wert; sonst PLZ-Mittelpunkt-Fallback (B5)
+  let lat=+g("Lat"),lon=+g("Lon");
+  if(!lat||!lon){const c=plzCentroid(g("PLZ"));lat=c.lat;lon=c.lon;}
+  const services=[];
+  const isBiz=/gewerbe|büro/i.test(g("Objekttyp"));
+  const uf=+g("Unterhalt Freq/Jahr")||52, um=+g("Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
+  services.push({k:"ur",freq:uf,min:um,abend:isBiz});
+  services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60)});
+  services.push({k:"gr",freq:+g("Grundr. Freq/Jahr")||4,min:+g("Grundr. Min")||Math.round(clamp(areaIn/8,140,420))});
+  if(areaGa>0)services.push({k:"ga",freq:16,min:Math.round((areaGa*1.5+700)/16)});
+  const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45});
+  return {id:g("Objekt-ID","id")||("OBJ-"+Math.random().toString(36).slice(2,6)),
+    street:g("Strasse")||"—",plz:g("PLZ")||"",ort:g("Ort")||"",lat:+lat.toFixed(4),lon:+lon.toFixed(4),
+    type:g("Objekttyp")||"Wohnliegenschaft",areaIn,areaGa,winter:win,
+    kunde:g("Kunde")||"Kunde",contact:g("Ansprechperson")||"",email:g("E-Mail")||"",tel:g("Tel. allgemein")||g("Tel. direkt")||"",services};
+}
+function appendObjects(rows){
+  const news=rows.map(rowToObj);const ex=new Set(DATA.objs.map(o=>o.id));
+  const add=news.filter(o=>!ex.has(o.id));
+  add.forEach(o=>{DATA.objs.push(o);autoAssign(o);});
+  persist();renderAll();flash(add.length+" Objekte hinzugefügt");
+}
+function replaceAllObjects(rows){
+  if(!confirm("Alle "+DATA.objs.length+" Objekte ersetzen? Kann nicht rückgängig gemacht werden."))return;
+  DATA.objs=rows.map(rowToObj);DATA.tours.forEach(t=>t.objs=[]);
+  DATA.objs.forEach(autoAssign);persist();renderAll();flash(DATA.objs.length+" Objekte neu aufgebaut");
+}
+function autoAssign(o){
+  const gardenHeavy=o.areaGa>400, abendable=o.services.some(s=>s.k==="ur"&&s.abend);
+  const eq=gardenHeavy?"garten":abendable?"abend":"tag";
+  const pool=DATA.tours.filter(t=>t.eq===eq);if(!pool.length){addTour(eq);return autoAssign(o);}
+  pool.sort((a,b)=>a.objs.length-b.objs.length);pool[0].objs.push(o.id);
+}
+function ferienImport(rows){
+  if(!confirm("Bisherige Ferienplanung ersetzen?"))return;
+  DATA.tours.forEach(t=>t.ferienKW=[]);
+  rows.forEach(r=>{const tid=String(r["Tour"]||r.Tour||"").trim();const t=DATA.tours.find(x=>x.id===tid);if(!t)return;
+    const von=+r["KW von"]||+r["KW"]||1, bis=+r["KW bis"]||von;
+    for(let w=von;w<=bis;w++)t.ferienKW.push(clamp(w,1,52));});
+  persist();renderFerien();flash("Ferien importiert");
+}
+
+/* ============ Persistenz: localStorage + GitHub ============ */
+function persist(){try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}}
+// Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
+function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
+function isEmpty(){return (!DATA.objs||!DATA.objs.length)&&(!DATA.tours||!DATA.tours.length);}
+function load(){
+  try{const s=localStorage.getItem("wsg_plan_v4");if(s){DATA=JSON.parse(s);
+    if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};return;}}catch(e){}
+  DATA=emptyPlan();   // leer starten — echte Daten kommen aus dem privaten Repo (Token)
+}
+function loadDemo(){DATA=buildDefault();if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};
+  curTour=DATA.tours[0]?.id;persist();flash("Demodaten geladen (lokal)");renderAll();if(typeof setSource==="function")setSource("lokal");}
+function resetDefault(){DATA=emptyPlan();curTour=null;persist();renderAll();flash("Geleert");}
+
+function gh(){try{return JSON.parse(localStorage.getItem("maintain_github")||"{}");}catch(e){return{};}}
+async function ghGet(path){
+  const g=gh();if(!g.token)throw new Error("Kein PAT");
+  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}?ref=${g.branch||"main"}`,
+    {headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"}});
+  if(r.status===404)return{sha:null,json:null};
+  if(!r.ok)throw new Error("GET "+r.status);
+  const j=await r.json();return{sha:j.sha,json:JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,"")))))};
+}
+async function ghPut(path,obj,sha){
+  const g=gh();
+  const body={message:"WSG plan update",content:btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))),branch:g.branch||"main"};
+  if(sha)body.sha=sha;
+  const r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}`,
+    {method:"PUT",headers:{Authorization:"Bearer "+g.token,Accept:"application/vnd.github+json"},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error("PUT "+r.status);
+}
+async function ghSavePlan(){
+  try{DATA.briefing={...BRIEF};const cur=await ghGet("data/WSG_plan_override.json");
+    await ghPut("data/WSG_plan_override.json",DATA,cur.sha);flash("✅ Plan im privaten Repo gespeichert");}
+  catch(e){flash("⚠ GitHub: "+e.message);}
+}
+async function ghLoadPlan(){
+  try{const cur=await ghGet("data/WSG_plan_override.json");
+    if(cur.json){DATA=cur.json;if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};persist();renderAll();flash("✅ Plan geladen");}}
+  catch(e){flash("⚠ GitHub: "+e.message);}
+}
+
+/* ============ View-Steuerung (embed/postMessage) ============ */
+const VIEWTITLE={tourplan:"Tourenplan",objekte:"Objekte",ferien:"Ferienplanung",kunden:"Kundenverzeichnis",personal:"Personal"};
+function updateEmpty(){const empty=isEmpty();
+  $("#emptyState").style.display=empty?"block":"none";
+  $$(".chap").forEach(c=>c.classList.toggle("on",!empty && c.dataset.chap===curView));
+  return empty;}
+function setView(v){
+  if(!VIEWTITLE[v])return;curView=v;
+  $("#viewTitle").textContent=VIEWTITLE[v];
+  const subs={tourplan:"Einsatz- & Routenplanung",objekte:(DATA.objs?.length||0)+" Objekte",ferien:"Abwesenheiten staffeln",kunden:"Kontakte",personal:"Bedarf · Kosten · Löhne"};
+  $("#viewSub").textContent=isEmpty()?"keine Daten":(subs[v]||"");
+  if(!updateEmpty()) renderView(v);
+}
+function renderView(v){
+  if(v==="tourplan"){renderPlanKpi();renderTourGrid();renderMap();renderDetail();fillTourSelect();}
+  else if(v==="objekte")renderObjekte();
+  else if(v==="ferien")renderFerien();
+  else if(v==="kunden")renderKunden();
+  else if(v==="personal")renderPersonal();
+}
+function renderAll(){fillTourSelect();if(!updateEmpty())renderView(curView);}
+function downloadDemo(){const demo=buildDefault();const b=new Blob([JSON.stringify(demo,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="WSG_plan_override.json";a.click();
+  flash("WSG_plan_override.json heruntergeladen – ins private Repo unter data/ legen");}
+
+/* Kapitel-Leiste nur Standalone */
+function initChapnav(){
+  const embedded=(window.parent!==window);
+  const nav=$("#chapnav");
+  if(embedded){nav.style.display="none";return;}
+  nav.innerHTML=Object.entries(VIEWTITLE).map(([k,v])=>`<button data-v="${k}" class="${k===curView?'on':''}">${v}</button>`).join("");
+  $$("#chapnav button").forEach(b=>b.onclick=()=>{setView(b.dataset.v);$$("#chapnav button").forEach(x=>x.classList.toggle("on",x===b));});
+}
+
+/* ============ Flash ============ */
+let flashT;function flash(m){const f=$("#flash");f.textContent=m;f.classList.add("on");clearTimeout(flashT);flashT=setTimeout(()=>f.classList.remove("on"),2200);}
+
+/* ============ Events ============ */
+function wire(){
+  $("#btnRefresh").onclick=ghSavePlan;
+  $("#tourSelect").onchange=e=>selectTour(e.target.value);
+  $("#tourPrev").onclick=()=>{const i=DATA.tours.findIndex(t=>t.id===curTour);selectTour(DATA.tours[(i-1+DATA.tours.length)%DATA.tours.length].id);};
+  $("#tourNext").onclick=()=>{const i=DATA.tours.findIndex(t=>t.id===curTour);selectTour(DATA.tours[(i+1)%DATA.tours.length].id);};
+  $("#kwInput").onchange=e=>{curKW=clamp(+e.target.value||1,1,52);renderDetail();};
+  $("#kwUp").onclick=()=>{curKW=clamp(curKW+1,1,52);renderDetail();};
+  $("#kwDown").onclick=()=>{curKW=clamp(curKW-1,1,52);renderDetail();};
+  $("#fzkost").onchange=e=>{DATA.fzkost=+e.target.value||FZKOST_DEF;persist();renderPlanKpi();};
+  $$('[data-add]').forEach(b=>b.onclick=()=>addTour(b.dataset.add));
+  $("#btnOptimize").onclick=optimizeAll;
+  $("#btnEmptyDemo").onclick=loadDemo;
+  $("#btnEmptyDl").onclick=downloadDemo;
+  $("#btnPdf").onclick=()=>printCalendar(curTour,+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
+  let briefShown=false;$("#btnBrief").onclick=()=>{briefShown=!briefShown;renderBriefCfg(briefShown);};
+  $("#btnTplObj").onclick=tplObjekte;
+  $("#fileAppend").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],appendObjects);e.target.value="";};
+  $("#fileReplace").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],replaceAllObjects);e.target.value="";};
+  $("#btnFerienAuto").onclick=ferienAuto;
+  $("#btnFerienClear").onclick=()=>{DATA.tours.forEach(t=>t.ferienKW=[]);persist();renderFerien();};
+  $("#btnTplFerien").onclick=tplFerien;
+  $("#fileFerien").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],ferienImport);e.target.value="";};
+  $("#ratio").onchange=e=>{DATA.ratio=clamp(+e.target.value||10,6,15);persist();renderPersonal();};
+  $("#social").onchange=e=>{DATA.social=clamp(+e.target.value||20,0,40);persist();renderPersonal();};
+  $("#btnResetPins").onclick=()=>{DATA.tours.forEach(t=>t.persons=PERS[t.eq]);persist();renderAll();flash("Personal zurückgesetzt");};
+  $("#btnAddStaff").onclick=()=>{DATA.staff=DATA.staff||[];DATA.staff.push({name:"Neue Person",tid:DATA.tours[0].id,wageMt:DATA.wages.tag,bg:100,fiktiv:false});persist();renderStaff();};
+  $("#btnGenStaff").onclick=()=>{if(DATA.staff&&DATA.staff.some(s=>!s.fiktiv)&&!confirm("Echte Mitarbeitende überschreiben?"))return;DATA.staff=fictitiousStaffList();persist();renderStaff();};
+  $("#fzkost").value=DATA.fzkost;
+  // postMessage vom Dashboard
+  window.addEventListener("message",ev=>{const d=ev.data||{};
+    if(d.wsgView)setView(d.wsgView);
+    if(d.wsgSave)ghSavePlan();
+    if(d.wsgLoad)ghLoadPlan();
+    if(d.wsgReset)resetDefault();});
+}
+
+/* ============ Datenquelle-Anzeige + Auto-Load aus privatem Repo ============ */
+function setSource(state,msg){
+  const el=$("#dataSrc"); if(!el)return;
+  const map={empty:["📭 leer – kein Token","var(--mut)"],laden:["☁ lade aus privatem Repo…","var(--acc)"],
+    privat:["☁ privates Repo","var(--ok)"],leer:["☁ Repo noch leer","var(--warn)"],
+    lokal:["💾 lokaler Stand","var(--mut)"],fehler:["⚠ "+(msg||"GitHub-Fehler"),"var(--bad)"]};
+  const m=map[state]||map.empty; el.textContent=m[0]; el.style.color=m[1]; el.title=msg||m[0];
+}
+async function ghAutoLoad(){
+  const g=gh();
+  if(!g.token||!g.owner||!g.repo){ setSource(localStorage.getItem("wsg_plan_v4")?"lokal":"empty"); return; }
+  setSource("laden");
+  try{
+    const cur=await ghGet("data/WSG_plan_override.json");
+    if(cur.json){ DATA=cur.json; if(DATA.briefing)BRIEF={...BRIEF,...DATA.briefing};
+      curTour=DATA.tours[0]?.id; persist(); renderAll(); setSource("privat");
+      flash("☁ Tourendaten aus privatem Repo geladen"); }
+    else setSource("leer");
+  }catch(e){ setSource("fehler",e.message); }
+}
+
+/* ============ Init ============ */
+function boot(){
+  load();curTour=DATA.tours[0]?.id;
+  const hash=new URLSearchParams(location.hash.slice(1));
+  const v=hash.get("view")||"tourplan";
+  wire();initChapnav();setView(VIEWTITLE[v]?v:"tourplan");
+  // dem Parent signalisieren
+  try{window.parent.postMessage({wsgReady:1},"*");}catch(e){}
+  // echte Daten aus dem privaten Repo nachladen (falls Token hinterlegt)
+  ghAutoLoad();
+}
+boot();
+</script>
+</body>
+</html>
