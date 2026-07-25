@@ -133,9 +133,10 @@ tr:hover td{background:var(--panel2)}
 
     <div class="kpi" id="planKpi" style="margin-bottom:12px"></div>
 
+    <!-- Schichten-Übersicht: Touren gruppiert nach Hauswart / Garten / Abendreinigung -->
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <h3 style="margin:0">Alle Touren</h3>
+        <h3 style="margin:0">Schichten-Übersicht</h3>
         <span class="sp" style="flex:1"></span>
         <label class="chk">Fahrzeugkosten/Jahr <input type="number" id="fzkost" step="500"></label>
         <button class="sm primary" id="btnOptimize" title="Objekte je Equipe lastbalanciert neu verteilen">🔄 Umplanen (optimieren)</button>
@@ -143,23 +144,14 @@ tr:hover td{background:var(--panel2)}
         <button class="sm" data-add="garten">＋ Garten</button>
         <button class="sm" data-add="abend">＋ Abend</button>
       </div>
-      <div class="tourgrid" id="tourGrid" style="margin-top:10px"></div>
+      <div id="tourGrid" style="margin-top:10px"></div>
     </div>
 
-    <div class="card" style="margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <h3 style="margin:0">Karte</h3>
-        <span class="sp" style="flex:1"></span>
-        <div class="tabs2" id="mapEquipe"></div>
-      </div>
-      <div id="mapBox"></div>
-      <div class="legend" id="mapLegend"></div>
-    </div>
-
+    <!-- Schichtkalender direkt unter der Schichten-Übersicht -->
     <div class="split">
       <div class="card">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <h3 style="margin:0" id="detailTitle">Tour-Detail</h3>
+          <h3 style="margin:0" id="detailTitle">Schichtkalender</h3>
           <span class="sp" style="flex:1"></span>
           <button class="sm" id="kwDown">‹ KW</button>
           <input type="number" id="kwInput" min="1" max="52" style="width:60px">
@@ -190,6 +182,17 @@ tr:hover td{background:var(--panel2)}
         </div>
         <div id="briefCfg"></div>
       </div>
+    </div>
+
+    <!-- Karte ganz unten -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h3 style="margin:0">Karte</h3>
+        <span class="sp" style="flex:1"></span>
+        <div class="tabs2" id="mapEquipe"></div>
+      </div>
+      <div id="mapBox"></div>
+      <div class="legend" id="mapLegend"></div>
     </div>
   </section>
 
@@ -261,7 +264,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26a</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26b</b></div>
 <div class="flash" id="flash"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -601,43 +604,57 @@ function distribNote(t,kw,cov){
 
 /* ============ Rendering: Tour-Karten ============ */
 function tourLabel(t){return EQ[t.eq].label.split(" / ")[0];}
+function buildTourCard(t){
+  const y=tourYear(t);
+  const card=document.createElement("div");
+  card.className="tourcard"+(curTour===t.id?" sel":"");
+  card.dataset.tour=t.id;
+  // Balkenbreite = Ø-Auslastung (max 100% visuell). Farbe: rot >105 (über Jahres-Hürde), grün 80–105, orange <80
+  const cls=y.avg>105?"bad":y.avg>=80?"":"warn";
+  const barW=clamp(y.avg,0,100);
+  card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
+    <div class="row muted">${t.objs.length} Objekte · ${t.persons} P</div>
+    <div class="bar ${cls}"><i style="width:${barW}%"></i></div>
+    <div class="row" style="font-size:12px"><span class="${y.avg>105?'over':y.avg>=80?'good':'mid'}">Ø ${nf(y.avg)}%</span>
+      <span class="${y.peak>110?'over':'muted'}">· Spitze ${nf(y.peak)}%</span></div>
+    <div class="row">
+      <button class="sm" data-p="-1">−</button><span>${t.persons} P</span><button class="sm" data-p="1">+</button>
+      <label class="chk">max% <input type="number" class="maxu" value="${t.maxUtil}" style="width:56px"></label>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" class="veh" ${t.vehicle?"checked":""}>🚗</label>
+      <label class="chk"><input type="checkbox" class="brf" ${t.briefing?"checked":""}>📋</label>
+      <span class="sp" style="flex:1"></span>
+      <button class="sm" data-del="1" title="Tour löschen">✕</button>
+    </div>`;
+  card.addEventListener("click",e=>{if(e.target.closest("button,input,label"))return;selectTour(t.id);});
+  card.querySelector('[data-p="-1"]').onclick=e=>{e.stopPropagation();setPersons(t,-1);};
+  card.querySelector('[data-p="1"]').onclick=e=>{e.stopPropagation();setPersons(t,1);};
+  card.querySelector(".maxu").onchange=e=>{setMaxUtil(t,+e.target.value||100);};
+  card.querySelector(".veh").onchange=e=>{t.vehicle=e.target.checked;persist();renderPlanKpi();};
+  card.querySelector(".brf").onchange=e=>{t.briefing=e.target.checked;persist();renderDetail();};
+  card.querySelector('[data-del="1"]').onclick=e=>{e.stopPropagation();delTour(t.id);};
+  card.addEventListener("dragover",e=>{const src=objById(window._dragObj);if(src){const st=DATA.tours.find(x=>x.objs.includes(src.id));if(st&&st.eq===t.eq){e.preventDefault();card.classList.add("dz");}}});
+  card.addEventListener("dragleave",()=>card.classList.remove("dz"));
+  card.addEventListener("drop",e=>{e.preventDefault();card.classList.remove("dz");moveObj(window._dragObj,t.id);});
+  return card;
+}
+// Schichten-Übersicht: klar getrennt nach Hauswart / Garten / Abendreinigung
 function renderTourGrid(){
   const box=$("#tourGrid"); box.innerHTML="";
-  DATA.tours.forEach(t=>{
-    const y=tourYear(t);
-    const card=document.createElement("div");
-    card.className="tourcard"+(curTour===t.id?" sel":"");
-    card.dataset.tour=t.id;
-    // Balkenbreite = Ø-Auslastung (max 100% visuell). Farbe: rot >105 (über Jahres-Hürde), grün 80–105, orange <80
-    const cls=y.avg>105?"bad":y.avg>=80?"":"warn";
-    const barW=clamp(y.avg,0,100);
-    card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
-      <div class="row muted">${t.objs.length} Objekte · ${t.persons} P</div>
-      <div class="bar ${cls}"><i style="width:${barW}%"></i></div>
-      <div class="row" style="font-size:12px"><span class="${y.avg>105?'over':y.avg>=80?'good':'mid'}">Ø ${nf(y.avg)}%</span>
-        <span class="${y.peak>110?'over':'muted'}">· Spitze ${nf(y.peak)}%</span></div>
-      <div class="row">
-        <button class="sm" data-p="-1">−</button><span>${t.persons} P</span><button class="sm" data-p="1">+</button>
-        <label class="chk">max% <input type="number" class="maxu" value="${t.maxUtil}" style="width:56px"></label>
-      </div>
-      <div class="row">
-        <label class="chk"><input type="checkbox" class="veh" ${t.vehicle?"checked":""}>🚗</label>
-        <label class="chk"><input type="checkbox" class="brf" ${t.briefing?"checked":""}>📋</label>
-        <span class="sp" style="flex:1"></span>
-        <button class="sm" data-del="1" title="Tour löschen">✕</button>
-      </div>`;
-    card.addEventListener("click",e=>{if(e.target.closest("button,input,label"))return;selectTour(t.id);});
-    card.querySelector('[data-p="-1"]').onclick=e=>{e.stopPropagation();setPersons(t,-1);};
-    card.querySelector('[data-p="1"]').onclick=e=>{e.stopPropagation();setPersons(t,1);};
-    card.querySelector(".maxu").onchange=e=>{setMaxUtil(t,+e.target.value||100);};
-    card.querySelector(".veh").onchange=e=>{t.vehicle=e.target.checked;persist();renderPlanKpi();};
-    card.querySelector(".brf").onchange=e=>{t.briefing=e.target.checked;persist();renderDetail();};
-    card.querySelector('[data-del="1"]').onclick=e=>{e.stopPropagation();delTour(t.id);};
-    // Drag & Drop Ziel
-    card.addEventListener("dragover",e=>{const src=objById(window._dragObj);if(src){const st=DATA.tours.find(x=>x.objs.includes(src.id));if(st&&st.eq===t.eq){e.preventDefault();card.classList.add("dz");}}});
-    card.addEventListener("dragleave",()=>card.classList.remove("dz"));
-    card.addEventListener("drop",e=>{e.preventDefault();card.classList.remove("dz");moveObj(window._dragObj,t.id);});
-    box.appendChild(card);
+  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["abend","🌙 Abendreinigung"]];
+  groups.forEach(([eq,label])=>{
+    const ts=DATA.tours.filter(t=>t.eq===eq); if(!ts.length) return;
+    const avg=Math.round(ts.reduce((a,t)=>a+tourYear(t).avg,0)/ts.length);
+    const head=document.createElement("div");
+    head.style.cssText="display:flex;align-items:center;gap:8px;margin:14px 0 6px;border-top:2px solid var(--tag-"+eq+");padding-top:8px";
+    head.innerHTML=`<b style="font-size:15px">${label}</b>
+      <span class="pill ${EQ[eq].cls}">${ts.length} Touren</span>
+      <span class="muted" style="font-size:12px">Ø ${avg}% Auslastung</span>`;
+    box.appendChild(head);
+    const grid=document.createElement("div"); grid.className="tourgrid";
+    ts.forEach(t=>grid.appendChild(buildTourCard(t)));
+    box.appendChild(grid);
   });
 }
 function setPersons(t,d){t.persons=clamp(t.persons+d,1,6);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
