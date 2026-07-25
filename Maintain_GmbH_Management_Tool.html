@@ -242,8 +242,8 @@ let M=load();
 function isEmptyCockpit(){const r=base({...M,src:"ist"});
   return Object.values(r.rev).every(v=>!v)&&Object.values(r.cost).every(v=>!v)&&!M.monate;}
 
-function load(){try{const s=localStorage.getItem("maintain_cockpit_v1");if(s)return{...structuredClone(DEF),...JSON.parse(s)};}catch(e){}return structuredClone(DEF);}
-function save(){try{localStorage.setItem("maintain_cockpit_v1",JSON.stringify(M));}catch(e){}}
+function load(){try{const s=localStorage.getItem("maintain_cockpit_v2");if(s)return{...structuredClone(DEF),...JSON.parse(s)};}catch(e){}return structuredClone(DEF);}
+function save(){try{localStorage.setItem("maintain_cockpit_v2",JSON.stringify(M));}catch(e){}}
 
 /* ---- Kernberechnung: base(m) liefert Umsatz/Kosten je Modus ---- */
 function base(m){
@@ -696,7 +696,7 @@ function boot(){
   // Cockpit-Kennzahlen automatisch aus dem privaten Repo laden (falls Token hinterlegt)
   const g=gh();
   if(g.token&&g.owner&&g.repo){status("☁ lade aus privatem Repo…");ghLoadData();}
-  else status(localStorage.getItem("maintain_cockpit_v1")?"💾 lokaler Stand":"📭 leer – kein Token");
+  else status(localStorage.getItem("maintain_cockpit_v2")?"💾 lokaler Stand":"📭 leer – kein Token");
 }
 boot();
 </script>
