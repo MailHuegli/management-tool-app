@@ -286,7 +286,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26l</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26m</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -852,7 +852,7 @@ function packEquipe(eq, shrink){
 // erhält die relativ am wenigsten volle Tour den Rest (Überlast wird in den Empfehlungen gemeldet).
 function fillExistingTours(eq){
   const tours=DATA.tours.filter(t=>t.eq===eq);
-  if(!tours.length){ packEquipe(eq); return; }                 // keine Vorgabe-Touren → einmalig automatisch erzeugen
+  if(!tours.length){ return; }                                 // KEINE Vorgabe-Tour → NICHTS automatisch erzeugen (Empfehlung weist darauf hin)
   const objs=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0);
   tours.forEach(t=>t.objs=[]);
   if(!objs.length){ return; }
@@ -951,7 +951,14 @@ function planSuggestions(){
   const unassigned=staff.filter(s=>s.tid&&!DATA.tours.some(t=>t.id===s.tid)).length;
   if(unassigned>0) tips.push({level:'warn',text:`${unassigned} Mitarbeitende nicht eingeteilt. ➜ im Reiter Personal einer Tour zuweisen.`});
   EQUIPES.forEach(eq=>{
-    const ts=DATA.tours.filter(t=>t.eq===eq); if(ts.length<2)return;
+    const ts=DATA.tours.filter(t=>t.eq===eq);
+    // Arbeit vorhanden, aber keine Tour → NICHT automatisch erzeugt, sondern hier gemeldet
+    const work=DATA.objs.reduce((a,o)=>a+weeklyAvgMin(o,eq),0);
+    if(work>0 && ts.length===0){ tips.push({level:'bad',text:`${EQ[eq].label.split(' ')[0]}: Arbeit vorhanden (≈${Math.round(work/60)}h/Woche), aber KEINE Tour. ➜ mit ＋ eine Tour anlegen.`}); return; }
+    // unverplante Objekte dieser Equipe (Arbeit da, aber in keiner Tour)
+    const unplaced=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0 && !ts.some(t=>t.objs.includes(o.id))).length;
+    if(unplaced>0) tips.push({level:'warn',text:`${EQ[eq].label.split(' ')[0]}: ${unplaced} Objekt(e) unverplant (kein Platz in den vorhandenen Touren). ➜ Tour anlegen oder Ziel% erhöhen.`});
+    if(ts.length<2) return;
     const totalAvg=ts.reduce((a,t)=>a+yById[t.id].avg,0);
     const totalObjs=ts.reduce((a,t)=>a+t.objs.length,0);
     const needed=Math.max(1,Math.ceil(totalAvg/targetUtil(eq)),Math.ceil(totalObjs/MAXOBJ[eq]));  // auch Objekt-Obergrenze je Tour beachten
@@ -1363,7 +1370,9 @@ function appendObjects(rows){
   const ex=new Set(DATA.objs.map(o=>o.id));
   const add=rows.map(rowToObj).filter(o=>!ex.has(o.id));
   add.forEach(o=>DATA.objs.push(o));
-  EQUIPES.forEach(eq=>fillExistingTours(eq));persist();renderAll();flash(add.length+" Objekte in die vorhandenen Touren eingefügt");
+  if(!DATA.tours.length) rebuildTours();                    // ganz leer → einmalig Touren erzeugen (Startgerüst)
+  else EQUIPES.forEach(eq=>fillExistingTours(eq));          // sonst nur in vorhandene Touren einfüllen (nichts neu erzeugen)
+  persist();renderAll();flash(add.length+" Objekte in die vorhandenen Touren eingefügt");
 }
 function replaceAllObjects(rows){
   if(!confirm("Alle "+DATA.objs.length+" Objekte ersetzen? Kann nicht rückgängig gemacht werden."))return;
