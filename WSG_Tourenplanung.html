@@ -154,6 +154,7 @@ tr:hover td{background:var(--panel2)}
         <span class="sp" style="flex:1"></span>
         <label class="chk">Fahrzeugkosten/Jahr <input type="number" id="fzkost" step="500"></label>
         <button class="sm primary" id="btnOptimize" title="Objekte je Equipe lastbalanciert neu verteilen">🔄 Umplanen (optimieren)</button>
+        <button class="sm" id="btnPdfAllTop" title="Deckblatt + Wochenpläne ALLER Touren in einem Dokument drucken">🖨 Alle Tourenblätter</button>
         <button class="sm" data-add="tag">＋ Hauswart</button>
         <button class="sm" data-add="garten">＋ Garten</button>
         <button class="sm" data-add="spezial">＋ Spezial</button>
@@ -288,7 +289,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26s</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26u</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -600,6 +601,30 @@ function costs(){
   const vehicles=DATA.tours.filter(t=>t.vehicle).length;
   const fzTotal=vehicles*DATA.fzkost;
   return {fte,fieldCost:cost,admin,adminCost,total:cost+adminCost,fzTotal,vehicles,field};
+}
+// Reicher Schnappschuss für das Cockpit (Kosten wie costs() + Auslastung je Equipe + Zähler) — EIN Auslastungs-Durchlauf.
+function planSummary(){
+  const social=DATA.social/100; const staff=Array.isArray(DATA.staff)?DATA.staff:[];
+  let fte=0,cost=0,overload=0; const byEq={};
+  DATA.tours.forEach(t=>{
+    const y=tourYear(t); const g=clamp(Math.ceil(y.avg/5)*5,0,100)/100; const persFte=t.persons*g;
+    fte+=persFte; cost+=(DATA.wages[t.eq]||5000)*persFte*13*(1+social);
+    if(y.avg>105) overload++;
+    const e=byEq[t.eq]=byEq[t.eq]||{tours:0,sum:0,peak:0}; e.tours++; e.sum+=y.avg; e.peak=Math.max(e.peak,y.peak);
+  });
+  Object.keys(byEq).forEach(k=>{byEq[k].avgUtil=byEq[k].tours?Math.round(byEq[k].sum/byEq[k].tours):0; byEq[k].peak=Math.round(byEq[k].peak); delete byEq[k].sum;});
+  const field=Math.ceil(DATA.tours.reduce((a,t)=>a+t.persons,0));
+  const admin=Math.max(0,Math.ceil(field/(DATA.ratio||10)));
+  const adminCost=(DATA.wages.admin||6300)*admin*13*(1+social);
+  const vehicles=DATA.tours.filter(t=>t.vehicle).length;
+  const fzTotal=vehicles*DATA.fzkost;
+  const assigned=id=>DATA.tours.some(t=>t.id===id);
+  const staffUnassigned=staff.filter(s=>!s.tid||!assigned(s.tid)).length;
+  const understaffed=DATA.tours.filter(t=>staff.filter(s=>s.tid===t.id).length<t.persons).length;
+  const kunden=new Set(DATA.objs.map(o=>o.kunde)).size;
+  return {fte,fieldCost:cost,admin,adminCost,total:cost+adminCost,fzTotal,vehicles,field,
+    byEq, overloadTours:overload, tours:DATA.tours.length, objs:DATA.objs.length,
+    staffTotal:staff.length, staffUnassigned, understaffed, kunden};
 }
 
 /* ============ Kalender-Belegung einer Woche (C1,C2,C7,C8) ============ */
@@ -1548,7 +1573,7 @@ function saveObjModal(id){
 
 /* ============ Persistenz: localStorage + GitHub ============ */
 function persist(){invalidateSchedule();
-  try{ DATA.calc=costs(); }catch(e){ DATA.calc=null; }   // echter Kostenschnappschuss (auf Basis der Ist-Auslastung) → Cockpit nutzt DENSELBEN Wert (einheitliche P&L)
+  try{ DATA.calc=planSummary(); }catch(e){ DATA.calc=null; }   // reicher Schnappschuss (Ist-Auslastung, Kosten, Zähler) → Cockpit nutzt DENSELBEN Wert (einheitliche P&L + Übersicht)
   try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
   try{window.parent&&window.parent!==window&&window.parent.postMessage({wsgDataChanged:1},"*");}catch(e){}}
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
@@ -1693,6 +1718,7 @@ function wire(){
   $("#btnEmptyDl").onclick=downloadDemo;
   $("#btnPdf").onclick=()=>printCalendar(curTour,+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
   $("#btnPdfAll").onclick=()=>printAllTours(+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
+  $("#btnPdfAllTop").onclick=()=>printAllTours(+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
   let briefShown=false;$("#btnBrief").onclick=()=>{briefShown=!briefShown;renderBriefCfg(briefShown);};
   $("#btnTplObj").onclick=tplObjekte;
   $("#fileAppend").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],appendObjects);e.target.value="";};
