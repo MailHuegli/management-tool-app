@@ -285,7 +285,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26h</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26i</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -304,7 +304,7 @@ const chf=n=>"CHF "+nf(Math.round(n));
 
 /* ---- Konstanten (Regelwerk C1–C13) ---- */
 const HOME={lat:47.451,lon:8.585,name:"Kloten"};   // Hauptsitz
-const EQUIPES=["tag","garten","abend","spezial"];   // alle Equipen (spezial = flexible Spezial-/Zwischenreinigung + Ferien-/Krankheitsabdeckung)
+const EQUIPES=["tag","garten","spezial","abend"];   // Reihenfolge: Hauswart · Garten · Spezial · Abend (spezial = Grund-/Zwischenreinigung + Notfall-/Überlastabdeckung)
 const MAXMIN={tag:2520,garten:5040,abend:1350,spezial:2520};    // Kapazität min/Woche je Tour (voll besetzt)
 const PERS={tag:1,garten:1,abend:1,spezial:1};               // Default Personen/Tour (Garten kann auf 2 gestellt werden)
 const MAXOBJ={tag:14,garten:22,abend:12,spezial:34};           // max. Objekte je Tour (Spezial: viele Objekte, tiefe Frequenz)
@@ -539,16 +539,20 @@ function computeCoverage(kw){
     if(res[t.id].avail>0) return;
     const wmap=tourWeekObjMap(t,kw);                 // geglättete Minuten je Objekt dieser KW
     const spill=[]; for(const id of Object.keys(wmap)){const o=objById(id); if(o&&wmap[id]>0) spill.push({o,need:wmap[id]});}
-    // Abdeckung: ZUERST Spezialequipe (deckt Ferien/Krankheit ab), sonst gleiche Equipe.
-    const spezialPeers=(eqGroups['spezial']||[]).filter(p=>p.id!==t.id&&res[p.id].avail>0);
-    const samePeers=(eqGroups[t.eq]||[]).filter(p=>p.id!==t.id&&res[p.id].avail>0);
+    // Abdeckungs-Reihenfolge je Equipe: ZUERST eigene Equipe (solange sie es tragen kann),
+    // Spezial erst wenn die eigene Auslastung zu hoch ist; Garten nur als NOTFALL für Hauswart.
+    // Spezial deckt KEINE Gartenarbeit ab (garten → nur garten).
+    const COVER={ tag:["tag","spezial","garten"], abend:["abend","spezial"], garten:["garten"], spezial:["spezial","tag"] };
+    const chain=COVER[t.eq]||[t.eq];
     const freeOf=p=>{const perCap=PERPERSON[p.eq]*45/42; const load=(tourWorkMin(p,kw)+tourDriveMin(p,kw)+res[p.id].extra)/res[p.id].avail; return perCap-load;};
     for(const sp of spill.sort((a,b)=>b.need-a.need)){
-      const o=sp.o, need=sp.need;
-      let best=null,bestFree=-1;
-      for(const p of spezialPeers){const f=freeOf(p); if(f>=need && f>bestFree){bestFree=f;best=p;}}   // 1) Spezial bevorzugt
-      if(!best){ for(const p of samePeers){const f=freeOf(p); if(f>bestFree){bestFree=f;best=p;}} }      // 2) sonst Equipe-Kollege
-      if(best&&bestFree>=need){res[best.id].extra+=need;res[best.id].taken.push({obj:o.id,from:t.id,min:need});}
+      const o=sp.o, need=sp.need; let best=null,bestFree=-1;
+      for(const geq of chain){                                   // Prioritätsstufen der Reihe nach
+        const peers=(eqGroups[geq]||[]).filter(p=>p.id!==t.id&&res[p.id].avail>0);
+        for(const p of peers){const f=freeOf(p); if(f>=need && f>bestFree){bestFree=f;best=p;}}
+        if(best) break;                                          // in dieser Stufe untergebracht → nicht weiter absteigen
+      }
+      if(best){res[best.id].extra+=need;res[best.id].taken.push({obj:o.id,from:t.id,min:need});}
       else res[t.id].spillToAblose=(res[t.id].spillToAblose||0)+need;
     }
   });
@@ -730,7 +734,7 @@ function buildTourCard(t){
 function renderTourGrid(){
   if(!Array.isArray(DATA.staff)){DATA.staff=fictitiousStaffList();persist();}  // fiktive MA je Slot, damit Touren besetzt starten
   const box=$("#tourGrid"); box.innerHTML="";
-  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["abend","🌙 Abendreinigung"],["spezial","✨ Spezialreinigung"]];
+  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["spezial","✨ Spezialreinigung"],["abend","🌙 Abendreinigung"]];
   groups.forEach(([eq,label])=>{
     const ts=DATA.tours.filter(t=>t.eq===eq); if(!ts.length) return;
     const avg=Math.round(ts.reduce((a,t)=>a+tourYear(t).avg,0)/ts.length);
@@ -841,7 +845,7 @@ function packEquipe(eq, shrink){
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
 }
-function reorderTours(){const rank={tag:0,garten:1,abend:2,spezial:3};
+function reorderTours(){const rank={tag:0,garten:1,spezial:2,abend:3};
   DATA.tours.sort((a,b)=>(rank[a.eq]-rank[b.eq])||a.id.localeCompare(b.id));}
 function ensureCurTour(){ if(!DATA.tours.find(t=>t.id===curTour)) curTour=DATA.tours[0]?.id; }
 function redistributeCrew(eq){ packEquipe(eq); }       // Personal-/Deckeländerung → neu packen
