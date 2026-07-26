@@ -286,7 +286,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26m</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26o</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -317,6 +317,7 @@ const JUMP_MINFILL=0.55;                            // erst ab dieser Füllung (
 const DETOUR_SHARE=30;                              // Fahrtanteil % ab dem eine Tour als „viel Weg für wenig Arbeit" markiert wird (B)
 const DAYTARGET=504;                                // Norm 8h24 je Werktag (min) — Ziel ohne Überzeit
 const OT_MAX=60;                                    // max. 1h Überzeit/Tag (nur wenn nötig; sonst 0)
+const BRIEF_EDGE=1.0;                               // Briefing „nah" am Start/Feierabend = innerhalb 1h → keine Arbeit auf der äusseren Seite
 const SOCIAL_DEF=20, FZKOST_DEF=8000;
 const WAGES_DEF={tag:5700,garten:5300,abend:4500,spezial:5200,admin:6300};
 const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],admin:[5500,7200]};
@@ -325,7 +326,8 @@ const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],wo
           abend:{label:"Abendreinigung",short:"A",cls:"abend",win:[17,21.5],work:[17,21.5]},
           spezial:{label:"Spezialreinigung",short:"S",cls:"spezial",win:[7.5,21],work:[7.5,17]}};
 const SERVICE={ur:{label:"Unterhaltsreinigung",col:"#4aa3ff"},th:{label:"Techn. Hauswart",col:"#38c172"},
-               gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt",col:"#5fbf6b"},
+               gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt (allg.)",col:"#5fbf6b"},
+               gf:{label:"Garten Frühling",col:"#8fd14f"},gs:{label:"Garten Sommer",col:"#39a845"},gh:{label:"Garten Herbst",col:"#d98b30"},
                win:{label:"Winterdienst",col:"#7fc7ff"},sp:{label:"Spezial-/Zwischenreinigung",col:"#ff9f43"}};
 // Feiertage ZH 2026 (KW) — Freitags-/Werktagsfeiertage
 const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Karfreitag"},
@@ -333,6 +335,9 @@ const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Ka
   {kw:22,d:1,n:"Pfingstmontag"},{kw:52,d:5,n:"Weihnachten"}];
 const holidaySet=new Set(HOLIDAYS.map(h=>h.kw+"-"+h.d));
 const WINTER_KW=w=>(w<=9||w>=48);
+// Garten-Saisonfenster (KW von–bis). Winter = Winterdienst (WINTER_KW).
+const SEASON={ga:[12,44], gf:[10,21], gs:[22,35], gh:[36,47]};   // ga=generell, gf=Frühling, gs=Sommer, gh=Herbst
+function inSeason(k,kw){ if(k==="win") return WINTER_KW(kw); const s=SEASON[k]; return s?(kw>=s[0]&&kw<=s[1]):true; }
 // PLZ-Mittelpunkte (Region ZH/Glattal) für Geocoding-Fallback (C5/B5)
 const PLZLOC={"8302":[47.451,8.585],"8180":[47.521,8.539],"8152":[47.430,8.575],"8304":[47.412,8.596],
   "8600":[47.397,8.618],"8610":[47.349,8.720],"8630":[47.257,8.853],"8105":[47.431,8.469],
@@ -388,8 +393,10 @@ function buildDefault(){
     } else {                                           // Garten-Liegenschaft (Gartenequipe)
       type="Wohnüberbauung mit Umschwung"; areaIn=Math.round(300+r()*900);
       areaGa=Math.round(500+r()*1700); winter=r()<0.8;
-      const annual=Math.round(areaGa*1.7+900);         // Jahres-Gartenzeit
-      services.push({k:"ga",freq:18,min:Math.round(annual/18)});          // ~18 Saison-Einsätze
+      const annual=Math.round(areaGa*1.7+900);         // Jahres-Gartenzeit, auf Saisons verteilt
+      services.push({k:"gf",freq:6, min:Math.round(annual*0.28/6)});      // Frühling: Auspflanzen, Rückschnitt, Startpflege
+      services.push({k:"gs",freq:12,min:Math.round(annual*0.44/12)});     // Sommer: Rasen/Wässern/Unterhalt (häufig)
+      services.push({k:"gh",freq:6, min:Math.round(annual*0.28/6)});      // Herbst: Laub, Winterfestmachung
       services.push({k:"th",freq:52,min:Math.round(40+r()*40)});          // Betreuung Umschwung
       services.push({k:"ur",freq:52,min:Math.round(70+r()*70),abend:false});
     }
@@ -453,11 +460,7 @@ function objMinInWeek(o,kw,eq){
    Woche verteilt. So bleibt die Wochenlast über das Jahr möglichst flach → keine 12h-Spitzenwochen. */
 let SCHED_CACHE=null;
 function invalidateSchedule(){ SCHED_CACHE=null; }
-function eligibleWeeks(k){ const w=[]; for(let kw=1;kw<=52;kw++){
-    if(k==="ga" && (kw<12||kw>44)) continue;      // Gartensaison Mrz–Nov
-    if(k==="win" && !WINTER_KW(kw)) continue;      // Winterdienst nur Winterwochen
-    w.push(kw);
-  } return w; }
+function eligibleWeeks(k){ const w=[]; for(let kw=1;kw<=52;kw++){ if(inSeason(k,kw)) w.push(kw); } return w; }
 function tourSchedule(t){
   if(!SCHED_CACHE) SCHED_CACHE={};
   if(SCHED_CACHE[t.id]) return SCHED_CACHE[t.id];
@@ -643,9 +646,19 @@ function buildWeek(t,kw,cov){
   const dayDrive=[]; let otUsed=false;
   workDays.forEach((d,i)=>{
     const briefToday = t.briefing && d===briefDay && !holiDays.has(briefDay);
-    const breaks=[]; if(t.eq!=="abend") breaks.push([12,13]); if(briefToday) breaks.push([bs,be]);  // Briefing an Randzeit ⇒ keine Arbeit auf der anderen Seite
+    let dayStart=ws, dayEnd=we+OT_MAX/60;              // Überzeit verlängert das Tagesende
+    const breaks=[]; if(t.eq!=="abend") breaks.push([12,13]);
+    if(briefToday){
+      const nearStart = bs <= ws + BRIEF_EDGE;         // Briefing nah am Arbeitsstart
+      const nearEnd   = be >= we - BRIEF_EDGE;         // Briefing nah am Feierabend
+      if(nearStart)      dayStart = be;                // → keine Arbeit VOR dem Briefing
+      else if(nearEnd)   dayEnd   = bs;                // → keine Arbeit NACH dem Briefing (auch keine Überzeit danach)
+      else               breaks.push([bs,be]);         // Briefing mitten am Tag → Arbeit drumherum
+    }
     breaks.sort((a,b)=>a[0]-b[0]);
-    let cursor=ws, filled=0; const limit=perDayLimit[i]; let firstOfDay=true;
+    // verfügbare Arbeitsminuten im Zeitfenster [dayStart,dayEnd] abzüglich Pausen → begrenzt die Tages-Last
+    let windowMin=(dayEnd-dayStart)*60; breaks.forEach(br=>{const a=Math.max(br[0],dayStart),b=Math.min(br[1],dayEnd); if(b>a) windowMin-=(b-a)*60;});
+    let cursor=dayStart, filled=0; const limit=Math.min(perDayLimit[i], windowMin); let firstOfDay=true;
     while(queue.length && filled< limit-0.5){
       const ch=queue[0];
       if(firstOfDay){ dayDrive[d]=distMin(HOME,ch.o); firstOfDay=false; }
@@ -678,7 +691,7 @@ function buildWeek(t,kw,cov){
   return {days,drivePre,dayDrive,totalWork,holiDays,workDays,overflow,otUsed};
 }
 function dominantService(o,kw,eq){let best="ur",bm=-1;(o.services||[]).forEach(s=>{
-  if(serviceEq(o,s)!==eq)return; if(s.k==="win"&&!WINTER_KW(kw))return;
+  if(serviceEq(o,s)!==eq)return; if(!inSeason(s.k,kw))return;
   if(s.min>bm){bm=s.min;best=s.k;}});return best;}
 function distribNote(t,kw,cov){
   const c=cov&&cov[t.id]; if(!c)return"";
@@ -1288,11 +1301,13 @@ function dl(wb,name){XLSX.writeFile(wb,name);}
 function tplObjekte(){
   const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein",
     "Unterhalt Freq/Jahr","Unterhalt Min","Unterhalt Equipe","Hauswart Freq/Jahr","Hauswart Min","Hauswart Equipe","Grundr. Freq/Jahr","Grundr. Min","Grundr. Equipe",
-    "Garten Freq/Jahr","Garten Min","Spezial Freq/Jahr","Spezial Min","Spezial Equipe","Winterdienst (ja/nein)","Winterdienst Equipe","Monatspauschale CHF","Pauschale statt Stunden (ja/nein)","Bemerkungen"];
-  const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnliegenschaft","520","300","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","",
-    "52","40","Hauswart","12","30","Hauswart","4","90","Spezial","16","70","6","120","Spezial","ja","Hauswart","0","nein",""];
-  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-Arbeit→Garten, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
-    ["Spezialreinigung = flexible Equipe: Grund-/Zwischen-/Spezialreinigungen + deckt Hauswart-Touren bei Ferien/Krankheit ab."],
+    "Garten allg. Freq/Jahr","Garten allg. Min","Frühling Freq/Jahr","Frühling Min","Sommer Freq/Jahr","Sommer Min","Herbst Freq/Jahr","Herbst Min",
+    "Spezial Freq/Jahr","Spezial Min","Spezial Equipe","Winterdienst (ja/nein)","Winterdienst Equipe","Monatspauschale CHF","Pauschale statt Stunden (ja/nein)","Bemerkungen"];
+  const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnüberbauung mit Umschwung","520","900","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","",
+    "52","40","Garten","12","30","Garten","4","90","Spezial","0","0","6","70","12","55","6","70","0","0","Spezial","ja","Garten","0","nein",""];
+  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-/Saisonarbeit→Garten, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
+    ["Garten-Saisons: Frühling KW10–21 · Sommer KW22–35 · Herbst KW36–47 · Winterdienst KW48–9. Werden automatisch in ihre Saison gelegt und geglättet."],
+    ["Spezialreinigung = flexible Equipe: Grund-/Zwischen-/Spezialreinigungen + deckt Hauswart-/Abend-Touren bei Ferien/Krankheit ab (kein Garten)."],
     ["Pauschale statt Stunden = ja → Umsatz dieses Objekts = Monatspauschale × 12 (statt Stunden × Ansatz)."]];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),"Hinweise");dl(wb,"Vorlage_Objekte_Komplett.xlsx");
@@ -1316,15 +1331,20 @@ function rowToObj(r){
   const services=[];
   const isBiz=/gewerbe|büro/i.test(g("Objekttyp"));
   const uf=+g("Unterhalt Freq/Jahr")||52, um=+g("Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
-  services.push({k:"ur",freq:uf,min:um,eq:eqParse(g("Unterhalt Equipe"))||(isBiz?"abend":"tag")});
-  services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60),eq:eqParse(g("Hauswart Equipe"))||"tag"});
+  services.push({k:"ur",freq:uf,min:um,eq:eqParse(g("Unterhalt Equipe"))||(isBiz?"abend":undefined)});   // leer → serviceEq nach Objekttyp
+  services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60),eq:eqParse(g("Hauswart Equipe"))||undefined});
   services.push({k:"gr",freq:+g("Grundr. Freq/Jahr")||4,min:+g("Grundr. Min")||Math.round(clamp(areaIn/8,140,420)),eq:eqParse(g("Grundr. Equipe"))||"spezial"});
-  const gaF=+g("Garten Freq/Jahr")||0, gaM=+g("Garten Min")||0;
+  const gaF=+g("Garten allg. Freq/Jahr","Garten Freq/Jahr")||0, gaM=+g("Garten allg. Min","Garten Min")||0;
   if(gaF>0&&gaM>0) services.push({k:"ga",freq:gaF,min:gaM,eq:"garten"});
-  else if(areaGa>0) services.push({k:"ga",freq:16,min:Math.round((areaGa*1.5+700)/16),eq:"garten"});
+  [["gf","Frühling"],["gs","Sommer"],["gh","Herbst"]].forEach(([k,lbl])=>{const f=+g(lbl+" Freq/Jahr")||0,m=+g(lbl+" Min")||0;if(f>0&&m>0)services.push({k,freq:f,min:m,eq:"garten"});});
+  // Fallback: Gartenfläche vorhanden, aber keine Garten-Arbeit angegeben → automatisch auf Saisons verteilen
+  if(!services.some(s=>["ga","gf","gs","gh"].includes(s.k)) && areaGa>0){ const an=Math.round(areaGa*1.6+800);
+    services.push({k:"gf",freq:6,min:Math.round(an*0.28/6),eq:"garten"});
+    services.push({k:"gs",freq:12,min:Math.round(an*0.44/12),eq:"garten"});
+    services.push({k:"gh",freq:6,min:Math.round(an*0.28/6),eq:"garten"}); }
   const spF=+g("Spezial Freq/Jahr")||0, spM=+g("Spezial Min")||0;
   if(spF>0&&spM>0) services.push({k:"sp",freq:spF,min:spM,eq:eqParse(g("Spezial Equipe"))||"spezial"});
-  const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45,eq:eqParse(g("Winterdienst Equipe"))||"tag"});
+  const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45,eq:eqParse(g("Winterdienst Equipe"))||"garten"});
   return {id:g("Objekt-ID","id")||("OBJ-"+Math.random().toString(36).slice(2,6)),
     street:g("Strasse")||"—",plz:g("PLZ")||"",ort:g("Ort")||"",lat:+lat.toFixed(4),lon:+lon.toFixed(4),
     type:g("Objekttyp")||"Wohnliegenschaft",areaIn,areaGa,winter:win,
@@ -1340,12 +1360,12 @@ function eqOf(o){
 }
 // Equipe EINER Arbeit/Dienstleistung (per-service). Explizit via s.eq, sonst sinnvoller Default.
 function serviceEq(o,s){
-  if(EQUIPES.includes(s.eq)) return s.eq;
-  if(s.k==="ga") return "garten";
-  if(s.k==="gr"||s.k==="sp") return "spezial";     // Grund-/Spezial-/Zwischenreinigung → Spezialequipe
-  if(s.k==="ur"&&s.abend) return "abend";
-  if(o&&o.cat==="buero") return "abend";
-  return "tag";
+  if(EQUIPES.includes(s.eq)) return s.eq;          // explizit gesetzt gewinnt
+  if(["ga","gf","gs","gh"].includes(s.k)) return "garten";   // Gartenunterhalt + Saisons (Frühling/Sommer/Herbst) → Gärtner
+  if(s.k==="win") return "garten";                  // Winterdienst → Gärtner (Winter-Saisonarbeit der Gartenequipe)
+  if(s.k==="gr"||s.k==="sp") return "spezial";      // Grund-/Spezial-/Zwischenreinigung → Spezialequipe
+  if(s.k==="ur"&&s.abend) return "abend";           // Abend-Unterhaltsreinigung
+  return eqOf(o);                                    // UR / Techn. Hauswart → Basis-Equipe des OBJEKTS (Garten-Liegenschaft→Gärtner, Büro→Abend, sonst Hauswart)
 }
 // Equipen, für die ein Objekt überhaupt Arbeit hat (kann mehrere sein)
 function objEquipes(o){ const set=new Set(); (o.services||[]).forEach(s=>{ if(s.min>0&&s.freq>0) set.add(serviceEq(o,s)); }); return [...set]; }
@@ -1429,7 +1449,7 @@ function applyKunden(rows){
 }
 
 /* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
-const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
+const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
 function openObjModal(id){
   const o=objById(id); if(!o)return;
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};

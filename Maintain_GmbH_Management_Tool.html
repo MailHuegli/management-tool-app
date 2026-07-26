@@ -138,7 +138,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726m#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726o#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -179,7 +179,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
 </div>
 
-<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26m</b></div>
+<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26o</b></div>
 <div class="flash" id="flash"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -389,7 +389,7 @@ function readTourPlan(){
     const bh={ur:0,th:0,gr:0,ga:0,win:0}; let pausch=0;
     d.objs.forEach(o=>{
       if(o.pauschOn){ pausch+=(+o.pauschMt||0)*12; return; }   // Pauschale statt Stunden → keine verrechenbaren Stunden
-      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':sv.k; if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialreinigung zählt zur Grund-/Spezialreinigung
+      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':(['gf','gs','gh'].includes(sv.k)?'ga':sv.k); if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialr.→Grund; Garten-Saisons→Garten
     });
     // grobe FTE/Personalkosten je Equipe (Abend/Garten sind Teilzeit/saisonal; Detail lebt in der Tourenplanung)
     const GR={tag:0.85,garten:0.50,abend:0.45,spezial:0.70};
@@ -649,7 +649,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html?v=20260726m#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260726o#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();
