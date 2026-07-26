@@ -274,6 +274,11 @@ tr:hover td{background:var(--panel2)}
       <h3>Lohn-Benchmark (CHF/Monat, ×13)</h3>
       <table id="wageTable"></table>
     </div>
+    <div class="card" style="margin-bottom:12px">
+      <h3>Verrechnungs-Ansätze je Arbeit (CHF/h)</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">Standard-Stundensätze für den Umsatz von Objekten OHNE Monatspauschale (Umsatz = Jahresstunden × Ansatz). Pro Objekt im ⚙-Modal übersteuerbar.</div>
+      <table id="rateTable"></table>
+    </div>
     <div class="card">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h3 style="margin:0">👤 Mitarbeitende</h3>
@@ -290,7 +295,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26w</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26x</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -326,6 +331,12 @@ const OT_MAX=60;                                    // max. 1h Überzeit/Tag (nu
 const BRIEF_EDGE=1.0;                               // Briefing „nah" am Start/Feierabend = innerhalb 1h → keine Arbeit auf der äusseren Seite
 const SOCIAL_DEF=20, FZKOST_DEF=8000;
 const WAGES_DEF={tag:5700,garten:5300,abend:4500,spezial:5200,admin:6300};
+// Globale Verrechnungs-Ansätze CHF/h je Arbeit (Umsatz = Stunden × Ansatz, wenn KEINE Pauschale). Pro Objekt übersteuerbar (s.rate).
+const RATES_DEF={ur:52,th:85,gr:65,ga:88,gf:88,gs:88,gh:88,rm:78,win:100,sp:65};
+// Turnus je Arbeit → Einsätze/Jahr (steuert das Frequenz-Feld im Objekt-Modal)
+const TURNUS=[["woche",52,"wöchentlich"],["2woche",26,"14-täglich"],["monat",12,"monatlich"],["2monat",6,"2-monatlich"],["quartal",4,"quartalsweise"],["halb",2,"halbjährlich"],["jahr",1,"jährlich"],["bedarf",0,"nach Bedarf"]];
+function freqToTurnus(f){const m=TURNUS.find(t=>t[1]===+f);return m?m[0]:"indiv";}
+function rateOf(s){ return (+s.rate>0)?+s.rate:((DATA.rates&&DATA.rates[s.k])||RATES_DEF[s.k]||0); }
 const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],admin:[5500,7200]};
 const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],work:[7.5,17]},
           garten:{label:"Gartenequipe",short:"G",cls:"garten",win:[7.5,21],work:[7.5,17]},
@@ -661,9 +672,19 @@ function planSummary(){
   const staffUnassigned=staff.filter(s=>!s.tid||!assigned(s.tid)).length;
   const understaffed=DATA.tours.filter(t=>staff.filter(s=>s.tid===t.id).length<t.persons).length;
   const kunden=new Set(DATA.objs.map(o=>o.kunde)).size;
+  // Umsatz je Kategorie: Pauschale-Objekte → Pauschale×12; sonst je Arbeit Jahresstunden × (Objekt-Satz ?? globaler Ansatz)
+  const REVCAT={ur:"ur",th:"th",gr:"gr",sp:"gr",ga:"garten",gf:"garten",gs:"garten",gh:"garten",rm:"garten",win:"winter"};
+  const rev={ur:0,th:0,gr:0,garten:0,winter:0,pausch:0};
+  DATA.objs.forEach(o=>{
+    if(o.pauschOn){ rev.pausch += (+o.pauschMt||0)*12; return; }
+    (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]; if(!cat) return;
+      rev[cat] += (s.freq||0)*(s.min||0)/60 * rateOf(s); });
+  });
+  const revenue=Object.values(rev).reduce((a,x)=>a+x,0);
   return {fte,fieldCost:cost,admin,adminCost,total:cost+adminCost,fzTotal,vehicles,field,
     byEq, overloadTours:overload, tours:DATA.tours.length, objs:DATA.objs.length,
-    staffTotal:staff.length, staffUnassigned, understaffed, kunden};
+    staffTotal:staff.length, staffUnassigned, understaffed, kunden,
+    rev, revenue, rates:{...(DATA.rates||RATES_DEF)}};
 }
 
 /* ============ Kalender-Belegung einer Woche (C1,C2,C7,C8) ============ */
@@ -1193,11 +1214,12 @@ function renderObjekte(){
     const hJ=Math.round((o.services||[]).reduce((a,s)=>a+s.freq*s.min/60,0));
     h+=`<tr><td class="mono">${esc(o.id)}</td><td>${esc(o.street)}</td><td>${esc(o.plz)} ${esc(o.ort)}</td><td>${esc(o.type)}</td><td>${+o.areaIn||0}</td><td>${o.areaGa||"–"}</td><td>${esc(o.kunde)}</td>
       <td title="${esc(arb)}">${hJ} h</td><td>${sel}</td>
-      <td><button class="sm" data-settings="${esc(o.id)}" title="Arbeiten anpassen">⚙</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="sm" data-settings="${esc(o.id)}" title="Arbeiten anpassen">⚙</button> <button class="sm" data-del="${esc(o.id)}" title="Objekt löschen" style="color:#e74c3c">🗑</button></td></tr>`;
   });
   h+="</tbody>";tbl.innerHTML=h;
   $$("#objTable select").forEach(s=>s.onchange=()=>moveObj(s.dataset.obj,s.value));
   $$('#objTable [data-settings]').forEach(b=>b.onclick=()=>openObjModal(b.dataset.settings));
+  $$('#objTable [data-del]').forEach(b=>b.onclick=()=>deleteObj(b.dataset.del));
 }
 
 /* ============ Ferien-Ansicht ============ */
@@ -1268,6 +1290,12 @@ function renderPersonal(){
   Object.keys(roles).forEach(k=>{wt+=`<tr><td>${roles[k]}</td><td class="muted">${nf(WAGE_BANDS[k][0])}–${nf(WAGE_BANDS[k][1])}</td><td>${nf(WAGES_DEF[k])}</td><td><input type="number" data-wage="${k}" value="${DATA.wages[k]}" style="width:80px"></td></tr>`;});
   $("#wageTable").innerHTML=wt+"</tbody>";
   $$('#wageTable input').forEach(i=>i.onchange=()=>{DATA.wages[i.dataset.wage]=+i.value||0;persist();renderPersonal();});
+  // Verrechnungs-Ansätze je Arbeit (global)
+  if(!DATA.rates) DATA.rates={...RATES_DEF};
+  let rt=`<thead><tr><th>Arbeit</th><th class="n">Standard</th><th class="n">Ansatz CHF/h</th></tr></thead><tbody>`;
+  SVCLIST.forEach(([k,l])=>{rt+=`<tr><td><span class="clbl" style="background:${SERVICE[k].col}"></span>${l}</td><td class="n muted">${RATES_DEF[k]}</td><td class="n"><input type="number" data-rate="${k}" value="${DATA.rates[k]}" min="0" style="width:80px"></td></tr>`;});
+  $("#rateTable").innerHTML=rt+"</tbody>";
+  $$('#rateTable input').forEach(i=>i.onchange=()=>{DATA.rates[i.dataset.rate]=+i.value||0;persist();renderPersonal();});
   renderStaff();
 }
 function fictitiousStaffList(){
@@ -1591,25 +1619,46 @@ function openObjModal(id){
   const o=objById(id); if(!o)return;
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
   const eqOpt=(sel)=>EQUIPES.map(e=>`<option value="${e}" ${sel===e?"selected":""}>${EQ[e].label.split(' ')[0]}</option>`).join("");
+  const gRate=k=>((DATA.rates&&DATA.rates[k])||RATES_DEF[k]||0);
+  const turnOpt=(f)=>{const cur=freqToTurnus(f);
+    return TURNUS.map(([v,fr,lb])=>`<option value="${v}" data-f="${fr}" ${cur===v?"selected":""}>${lb}</option>`).join("")
+      +`<option value="indiv" ${cur==="indiv"?"selected":""}>individuell</option>`;};
   const rows=SVCLIST.map(([k,l])=>{const s=svc(k); const seq=serviceEq(o,{k,eq:s.eq,abend:s.abend});
     return `<tr><td><span class="clbl" style="background:${SERVICE[k].col}"></span>${l}</td>
-      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:64px"></td>
-      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:70px"></td>
-      <td class="n"><select id="m_eq_${k}" style="width:92px">${eqOpt(seq)}</select></td></tr>`;}).join("");
+      <td><select id="m_turnus_${k}" style="width:112px">${turnOpt(s.freq||0)}</select></td>
+      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:52px"></td>
+      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:60px"></td>
+      <td class="n"><input type="number" id="m_rate_${k}" value="${(+s.rate>0)?s.rate:''}" placeholder="${gRate(k)}" min="0" title="Ansatz CHF/h · leer = Standard ${gRate(k)}" style="width:58px"></td>
+      <td class="n"><select id="m_eq_${k}" style="width:86px">${eqOpt(seq)}</select></td></tr>`;}).join("");
+  const winActive=(svc('win').freq>0 && svc('win').min>0);
   $("#objModalBox").innerHTML=`
     <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${esc(o.id)} · ${esc(o.street)}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
     <div class="muted" style="font-size:12px">${esc(o.plz)} ${esc(o.ort)} · ${esc(o.kunde)} · ${esc(o.type)}</div>
     <div class="toolbar">
       <label class="chk">Fläche m² <input type="number" id="m_areaIn" value="${o.areaIn||0}" style="width:80px"></label>
-      <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label></div>
-    <table><thead><tr><th>Arbeit</th><th class="n">Frequenz/Jahr</th><th class="n">Dauer (min)</th><th class="n">Equipe</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:6px">Frequenz = Einsätze pro Jahr (wöchentlich 52 · monatlich 12 · quartalsweise 4). Dauer 0 = Leistung entfällt. Equipe je Arbeit frei wählbar.</div>
+      <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label>
+      <label class="chk"><input type="checkbox" id="m_winOn" ${winActive?"checked":""}> ❄ Winterdienst aktiv</label></div>
+    <table><thead><tr><th>Arbeit</th><th>Turnus</th><th class="n">Freq/J</th><th class="n">Dauer&nbsp;min</th><th class="n">Satz&nbsp;CHF/h</th><th class="n">Equipe</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:6px">Turnus setzt die Frequenz/Jahr (bei „individuell" Zahl frei eintragen). Dauer 0 = Leistung entfällt. Satz leer = globaler Ansatz (grau). Equipe je Arbeit frei wählbar.</div>
     <div class="toolbar" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
       <label class="chk">Monatspauschale CHF <input type="number" id="m_pausch" value="${o.pauschMt||0}" min="0" style="width:100px"></label>
       <label class="chk"><input type="checkbox" id="m_pauschOn" ${o.pauschOn?"checked":""}> Umsatz = Pauschale (statt Stunden × Ansatz)</label></div>
-    <div class="toolbar" style="justify-content:flex-end"><button class="sm" id="objModalCancel">Abbrechen</button><button class="sm primary" id="objModalSave">Speichern</button></div>`;
+    <div class="toolbar" style="justify-content:space-between"><button class="sm" id="objModalDelete" style="color:#e74c3c;border-color:#e74c3c">🗑 Objekt löschen</button><span><button class="sm" id="objModalCancel">Abbrechen</button> <button class="sm primary" id="objModalSave">Speichern</button></span></div>`;
   $("#objModal").classList.add("on");
+  // Turnus-Dropdowns setzen die Frequenz; Frequenz-Eingabe aktualisiert das Dropdown
+  const syncWin=()=>{const w=$("#m_winOn"); if(w) w.checked=(+$("#m_freq_win").value>0 && +$("#m_min_win").value>0);};
+  SVCLIST.forEach(([k])=>{
+    const ts=$("#m_turnus_"+k), fi=$("#m_freq_"+k), mi=$("#m_min_"+k);
+    if(ts&&fi){ ts.onchange=()=>{ if(ts.value!=="indiv"){ fi.value=ts.selectedOptions[0].dataset.f; } if(k==="win")syncWin(); };
+      fi.onchange=()=>{ ts.value=freqToTurnus(+fi.value); if(k==="win")syncWin(); }; }
+    if(mi&&k==="win") mi.onchange=syncWin;
+  });
+  const wchk=$("#m_winOn");
+  if(wchk) wchk.onchange=()=>{
+    if(wchk.checked){ if(+$("#m_freq_win").value<=0){ $("#m_freq_win").value=8; $("#m_turnus_win").value="indiv"; } if(+$("#m_min_win").value<=0) $("#m_min_win").value=45; }
+    else { $("#m_freq_win").value=0; $("#m_min_win").value=0; $("#m_turnus_win").value="bedarf"; } };
   $("#objModalClose").onclick=closeObjModal; $("#objModalCancel").onclick=closeObjModal;
+  $("#objModalDelete").onclick=()=>deleteObj(id);
   $("#objModalSave").onclick=()=>saveObjModal(id);
 }
 function closeObjModal(){$("#objModal").classList.remove("on");}
@@ -1619,8 +1668,8 @@ function saveObjModal(id){
   o.areaIn=+$("#m_areaIn").value||o.areaIn; o.areaGa=+$("#m_areaGa").value||0;
   o.pauschMt=+$("#m_pausch").value||0; o.pauschOn=$("#m_pauschOn").checked;
   o.services=[];
-  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0, eq=$("#m_eq_"+k).value;
-    if(freq>0&&min>0){ o.services.push({k,freq,min,eq}); }});   // Equipe je Arbeit explizit
+  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0, eq=$("#m_eq_"+k).value, rate=+$("#m_rate_"+k).value||0;
+    if(freq>0&&min>0){ const s={k,freq,min,eq}; if(rate>0) s.rate=rate; o.services.push(s); }});   // Equipe + optionaler Satz je Arbeit
   o.winter=o.services.some(s=>s.k==="win");
   closeObjModal();
   // Betroffene Equipen (alt ∪ neu) neu packen → Objekt landet in den richtigen Touren
@@ -1629,6 +1678,17 @@ function saveObjModal(id){
   ensureCurTour(); persist(); renderAll();
   flash("Objekt "+o.id+" aktualisiert");
 }
+function deleteObj(id){
+  const o=objById(id); if(!o)return;
+  if(!confirm("Objekt „"+o.id+" · "+(o.street||"")+"" +"“ wirklich löschen? Es wird aus allen Touren entfernt.")) return;
+  const affected=new Set(objEquipes(o));
+  DATA.objs=DATA.objs.filter(x=>x.id!==id);
+  DATA.tours.forEach(t=>{ t.objs=(t.objs||[]).filter(oid=>oid!==id); });   // aus allen Touren entfernen
+  closeObjModal();
+  affected.forEach(eq=>fillExistingTours(eq));   // betroffene Equipen neu befüllen (Anzahl/Besetzung/Ziel% bleiben)
+  ensureCurTour(); persist(); renderAll();
+  flash("Objekt "+id+" gelöscht");
+}
 
 /* ============ Persistenz: localStorage + GitHub ============ */
 function persist(){invalidateSchedule();
@@ -1636,7 +1696,7 @@ function persist(){invalidateSchedule();
   try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
   try{window.parent&&window.parent!==window&&window.parent.postMessage({wsgDataChanged:1},"*");}catch(e){}}
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
-function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
+function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},rates:{...RATES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
 function isEmpty(){return (!DATA.objs||!DATA.objs.length)&&(!DATA.tours||!DATA.tours.length);}
 // Geladene Daten reparieren: fehlende/ungültige Felder auffüllen (schützt vor alten/teilweisen Dateien → kein Absturz)
 function normalizePlan(d){
@@ -1658,6 +1718,7 @@ function normalizePlan(d){
     if(!t.id) t.id = EQ[t.eq].short+"?";
   });
   d.wages = (d.wages&&typeof d.wages==="object") ? {...WAGES_DEF,...d.wages} : {...WAGES_DEF};
+  d.rates = (d.rates&&typeof d.rates==="object") ? {...RATES_DEF,...d.rates} : {...RATES_DEF};
   if(typeof d.social!=="number") d.social = SOCIAL_DEF;
   if(typeof d.fzkost!=="number") d.fzkost = FZKOST_DEF;
   if(typeof d.ratio!=="number") d.ratio = 10;

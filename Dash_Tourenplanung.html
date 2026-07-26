@@ -158,7 +158,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726w#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726x#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -199,7 +199,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
 </div>
 
-<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26w</b></div>
+<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26x</b></div>
 <div class="flash" id="flash"></div>
 
 <script src="xlsx.full.min.js"></script>
@@ -264,8 +264,10 @@ const REVKEYS={ur:"istUR",th:"istTH",gr:"istGR",garten:"istGarten",winter:"istWi
 const COSTKEYS={personal:"kPersonal",gf:"kGF",fahrzeug:"kFahrzeug",material:"kMaterial",winter:"kWinter",verwaltung:"kVerwaltung",abschreibung:"kAbschreibung",sonstige:"kSonstige"};
 const CAT2TOUR={ur:"ur",gr:"gr",th:"th",ga:"ga",win:"win"};  // Katalog-Bündel → Tour-Service
 function billableHours(){const o=readTourPlan();return o?o.billable:null;}
-function calcRev(m){ // Umsatz kalkuliert = verrechenbare Jahresstunden (Tourenplan) × Katalogsatz + Pauschalen
+function calcRev(m){ // Umsatz: bevorzugt der in der Tourenplanung berechnete Umsatz (Ansätze je Arbeit + Pauschalen), sonst Katalogsatz × Stunden
   const o=readTourPlan();
+  const r=o&&o.calc&&o.calc.rev;
+  if(r){ return {ur:r.ur||0, th:r.th||0, gr:r.gr||0, garten:r.garten||0, winter:r.winter||0, uebrig:r.pausch||0}; }
   const H=(o&&o.billable)||{ur:0,th:0,gr:0,ga:0,win:0};
   const pausch=(o&&o.pausch)||0;   // Objekte mit „Umsatz = Pauschale" → Jahres-Pauschale, fliesst in Übriges
   return {ur:m.rates.ur*H.ur, th:m.rates.th*H.th, gr:m.rates.gr*H.gr,
@@ -470,17 +472,27 @@ const COST_ROWS=[["kPersonal","Personal","personal"],["kGF","Geschäftsführung"
   ["kWinter","Winter","winter"],["kVerwaltung","Verwaltung","verwaltung"],["kAbschreibung","Abschreibung","abschreibung"],["kSonstige","Sonstige","sonstige"]];
 function renderEingaben(){
   const bh=billableHours();
-  // Katalog: Satz editierbar, Stunden aus dem Tourenplan (verrechenbar, read-only)
+  const _o=readTourPlan();
+  const planRates=_o&&_o.calc&&_o.calc.rates;   // Ansätze aus der Tourenplanung (Single Source, wenn Plan geladen)
+  const planRev=_o&&_o.calc&&_o.calc.rev;       // Umsatz je Kategorie aus der Tourenplanung
+  const CAT2REV={ur:'ur',gr:'gr',th:'th',ga:'garten',win:'winter'};
+  // Katalog: bei geladenem Plan Sätze + Umsatz aus der Tourenplanung (read-only), sonst editierbarer Fallback
   let h=`<thead><tr><th>Bündel</th><th class="n">Satz CHF/h</th><th>Marktband</th><th class="n">Std/Jahr (Touren)</th><th class="n">Umsatz</th></tr></thead><tbody>`;
-  CATALOG.forEach(c=>{const[k,l,band]=c;const rate=M.rates[k];const hrs=(bh&&CAT2TOUR[k])?bh[CAT2TOUR[k]]:0;
+  CATALOG.forEach(c=>{const[k,l,band]=c;
+    const rate=(planRates&&planRates[k]!=null)?planRates[k]:M.rates[k];
+    const hrs=(bh&&CAT2TOUR[k])?bh[CAT2TOUR[k]]:0;
+    const revCell=planRev?(CAT2REV[k]?chf(planRev[CAT2REV[k]]):"–"):chf(rate*hrs);
+    const rateCell=planRates?`<span class="n">${rate}</span>`:`<input type="number" data-rate="${k}" value="${rate}" style="width:80px">`;
     h+=`<tr><td>${l}</td>
-      <td class="n"><input type="number" data-rate="${k}" value="${rate}" style="width:80px"></td>
+      <td class="n">${rateCell}</td>
       <td class="band">${band[0]}–${band[1]}</td>
       <td class="n">${CAT2TOUR[k]?nf(hrs):"–"}</td>
-      <td class="n">${chf(rate*hrs)}</td></tr>`;});
+      <td class="n">${revCell}</td></tr>`;});
   $("#catTable").innerHTML=h+"</tbody>";
-  $("#catSum").textContent=bh?("Umsatz aus Touren "+chf(CATALOG.reduce((a,c)=>a+M.rates[c[0]]*((bh&&CAT2TOUR[c[0]])?bh[CAT2TOUR[c[0]]]:0),0))):"kein Tourenplan geladen";
-  $$('#catTable [data-rate]').forEach(i=>i.onchange=()=>{M.rates[i.dataset.rate]=+i.value||0;markDirty('rates');save();renderEingaben();renderActive();});
+  if(planRev){ const sum=(planRev.ur||0)+(planRev.th||0)+(planRev.gr||0)+(planRev.garten||0)+(planRev.winter||0);
+    $("#catSum").innerHTML="Umsatz aus Touren "+chf(sum)+(planRev.pausch?(" · Pauschalen "+chf(planRev.pausch)):"")+" <span class='muted'>· Ansätze werden in der Tourenplanung → Personal gepflegt (Objekt-Sätze übersteuern)</span>"; }
+  else $("#catSum").textContent=bh?("Umsatz aus Touren "+chf(CATALOG.reduce((a,c)=>a+M.rates[c[0]]*((bh&&CAT2TOUR[c[0]])?bh[CAT2TOUR[c[0]]]:0),0))):"kein Tourenplan geladen";
+  if(!planRates) $$('#catTable [data-rate]').forEach(i=>i.onchange=()=>{M.rates[i.dataset.rate]=+i.value||0;markDirty('rates');save();renderEingaben();renderActive();});
   // Berechnungsbasis-Hinweis
   $("#staffInputs").innerHTML=`<p class="muted" style="font-size:13px;margin:0 0 6px">
     <b>Umsatz</b> = verrechenbare Stunden aus dem Tourenplan × Satz (oben).
@@ -708,7 +720,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html?v=20260726w#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260726x#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();
