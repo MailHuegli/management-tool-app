@@ -138,7 +138,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726f#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726h#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -179,7 +179,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
 </div>
 
-<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26f</b></div>
+<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26h</b></div>
 <div class="flash" id="flash"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -243,10 +243,12 @@ const REVKEYS={ur:"istUR",th:"istTH",gr:"istGR",garten:"istGarten",winter:"istWi
 const COSTKEYS={personal:"kPersonal",gf:"kGF",fahrzeug:"kFahrzeug",material:"kMaterial",winter:"kWinter",verwaltung:"kVerwaltung",abschreibung:"kAbschreibung",sonstige:"kSonstige"};
 const CAT2TOUR={ur:"ur",gr:"gr",th:"th",ga:"ga",win:"win"};  // Katalog-Bündel → Tour-Service
 function billableHours(){const o=readTourPlan();return o?o.billable:null;}
-function calcRev(m){ // Umsatz kalkuliert = verrechenbare Jahresstunden (Tourenplan) × Katalogsatz
-  const H=billableHours()||{ur:0,th:0,gr:0,ga:0,win:0};
+function calcRev(m){ // Umsatz kalkuliert = verrechenbare Jahresstunden (Tourenplan) × Katalogsatz + Pauschalen
+  const o=readTourPlan();
+  const H=(o&&o.billable)||{ur:0,th:0,gr:0,ga:0,win:0};
+  const pausch=(o&&o.pausch)||0;   // Objekte mit „Umsatz = Pauschale" → Jahres-Pauschale, fliesst in Übriges
   return {ur:m.rates.ur*H.ur, th:m.rates.th*H.th, gr:m.rates.gr*H.gr,
-    garten:m.rates.ga*H.ga, winter:m.rates.win*H.win, uebrig:0};
+    garten:m.rates.ga*H.ga, winter:m.rates.win*H.win, uebrig:pausch};
 }
 function calcCost(m){ // Kosten kalkuliert aus dem Tourenplan (Personal/Fahrzeuge/Verwaltung); Rest 0 bis überschrieben
   const o=readTourPlan();
@@ -384,10 +386,13 @@ function readTourPlan(){
     if(!d||!d.objs||!d.objs.length) return null;
     const soc=1+(d.social||20)/100;
     // verrechenbare Jahresstunden je Kategorie = Σ (Minuten × Einsätze/Jahr) / 60
-    const bh={ur:0,th:0,gr:0,ga:0,win:0};
-    d.objs.forEach(o=>(o.services||[]).forEach(sv=>{if(bh[sv.k]!==undefined)bh[sv.k]+=(sv.min*sv.freq)/60;}));
+    const bh={ur:0,th:0,gr:0,ga:0,win:0}; let pausch=0;
+    d.objs.forEach(o=>{
+      if(o.pauschOn){ pausch+=(+o.pauschMt||0)*12; return; }   // Pauschale statt Stunden → keine verrechenbaren Stunden
+      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':sv.k; if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialreinigung zählt zur Grund-/Spezialreinigung
+    });
     // grobe FTE/Personalkosten je Equipe (Abend/Garten sind Teilzeit/saisonal; Detail lebt in der Tourenplanung)
-    const GR={tag:0.85,garten:0.50,abend:0.45};
+    const GR={tag:0.85,garten:0.50,abend:0.45,spezial:0.70};
     let fte=0,personal=0,fieldHeads=0;
     (d.tours||[]).forEach(t=>{const grade=GR[t.eq]||0.7; fte+=t.persons*grade; fieldHeads+=t.persons;
       personal+=(d.wages?.[t.eq]||5000)*t.persons*grade*13*soc;});
@@ -395,7 +400,7 @@ function readTourPlan(){
     const fzTotal=vehicles*(d.fzkost||8000);
     const admin=Math.max(0,Math.ceil(fieldHeads/(d.ratio||10)));
     return {tours:(d.tours||[]).length,objs:d.objs.length,fte,personal,vehicles,fzTotal,
-      fieldHeads,admin,adminWage:(d.wages?.admin||6300),soc,billable:bh};
+      fieldHeads,admin,adminWage:(d.wages?.admin||6300),soc,billable:bh,pausch};
   }catch(e){return null;}
 }
 
@@ -644,7 +649,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html?v=20260726f#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260726h#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();

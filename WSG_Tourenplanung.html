@@ -8,7 +8,7 @@
 :root{
   --bg:#0f1720; --panel:#16212e; --panel2:#1c2a3a; --line:#26384c; --ink:#e8eef5; --mut:#8ea3ba;
   --acc:#3ea6ff; --ok:#38c172; --warn:#f0932b; --bad:#e74c3c; --tag:#243447;
-  --tag-tag:#2d5a8a; --tag-garten:#2f7d4f; --tag-abend:#7a4fae; --tag-ab:#8a5a2d;
+  --tag-tag:#2d5a8a; --tag-garten:#2f7d4f; --tag-abend:#7a4fae; --tag-spezial:#a86a2d; --tag-ab:#8a5a2d;
   --radius:12px; --sh:0 1px 2px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
@@ -37,6 +37,7 @@ a{color:var(--acc)}
 .pill.tag{background:var(--tag-tag);color:#dbeaff}
 .pill.garten{background:var(--tag-garten);color:#dcf5e6}
 .pill.abend{background:var(--tag-abend);color:#efe1ff}
+.pill.spezial{background:var(--tag-spezial);color:#ffe9d1}
 .pill.ab{background:var(--tag-ab);color:#ffe9d1}
 table{border-collapse:collapse;width:100%}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;font-size:13px}
@@ -141,6 +142,9 @@ tr:hover td{background:var(--panel2)}
     </div>
 
     <div class="kpi" id="planKpi" style="margin-bottom:12px"></div>
+
+    <!-- Empfehlungen des Planers: Überlast, Puffer, zusätzliche/weglassbare Touren, 2-Personen-Touren -->
+    <div id="planTips" style="margin-bottom:12px"></div>
 
     <!-- Schichten-Übersicht: Touren gruppiert nach Hauswart / Garten / Abendreinigung -->
     <div class="card" style="margin-bottom:12px">
@@ -281,7 +285,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26f</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26h</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -300,25 +304,28 @@ const chf=n=>"CHF "+nf(Math.round(n));
 
 /* ---- Konstanten (Regelwerk C1–C13) ---- */
 const HOME={lat:47.451,lon:8.585,name:"Kloten"};   // Hauptsitz
-const MAXMIN={tag:2520,garten:5040,abend:1350};    // Kapazität min/Woche je Tour (voll besetzt)
-const PERS={tag:1,garten:2,abend:1};               // Default Personen/Tour
-const MAXOBJ={tag:14,garten:22,abend:12};           // max. Objekte je Tour
-const PERPERSON={tag:2520,garten:2520,abend:1350};  // Kapazität min/Woche je Person
+const EQUIPES=["tag","garten","abend","spezial"];   // alle Equipen (spezial = flexible Spezial-/Zwischenreinigung + Ferien-/Krankheitsabdeckung)
+const MAXMIN={tag:2520,garten:5040,abend:1350,spezial:2520};    // Kapazität min/Woche je Tour (voll besetzt)
+const PERS={tag:1,garten:1,abend:1,spezial:1};               // Default Personen/Tour (Garten kann auf 2 gestellt werden)
+const MAXOBJ={tag:14,garten:22,abend:12,spezial:34};           // max. Objekte je Tour (Spezial: viele Objekte, tiefe Frequenz)
+const PERPERSON={tag:2520,garten:2520,abend:1350,spezial:2520};  // Kapazität min/Woche je Person
 const PACK_FACTOR=0.90;                             // Arbeitsanteil je Tour (Rest ~10% = Fahrzeit) → Ziel-Auslastung 90–100%
 const WEEKMIN=2520;                                 // 42 h = 100 % je Person
 const JUMP_MIN=22;                                  // Weg-Sprung (min) ab dem eine Tour geografisch „reisst" → neue Tour (A)
 const JUMP_MINFILL=0.55;                            // erst ab dieser Füllung (Anteil Ziel-Auslastung) darf ein Weit-Sprung eine neue Tour öffnen
 const DETOUR_SHARE=30;                              // Fahrtanteil % ab dem eine Tour als „viel Weg für wenig Arbeit" markiert wird (B)
-const DAYTARGET=510;                                // Ø 8h24 je Werktag (min)
+const DAYTARGET=504;                                // Norm 8h24 je Werktag (min) — Ziel ohne Überzeit
+const OT_MAX=60;                                    // max. 1h Überzeit/Tag (nur wenn nötig; sonst 0)
 const SOCIAL_DEF=20, FZKOST_DEF=8000;
-const WAGES_DEF={tag:5700,garten:5300,abend:4500,admin:6300};
-const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],admin:[5500,7200]};
+const WAGES_DEF={tag:5700,garten:5300,abend:4500,spezial:5200,admin:6300};
+const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],admin:[5500,7200]};
 const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],work:[7.5,17]},
           garten:{label:"Gartenequipe",short:"G",cls:"garten",win:[7.5,21],work:[7.5,17]},
-          abend:{label:"Abendreinigung",short:"A",cls:"abend",win:[17,21.5],work:[17,21.5]}};
+          abend:{label:"Abendreinigung",short:"A",cls:"abend",win:[17,21.5],work:[17,21.5]},
+          spezial:{label:"Spezialreinigung",short:"S",cls:"spezial",win:[7.5,21],work:[7.5,17]}};
 const SERVICE={ur:{label:"Unterhaltsreinigung",col:"#4aa3ff"},th:{label:"Techn. Hauswart",col:"#38c172"},
                gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt",col:"#5fbf6b"},
-               win:{label:"Winterdienst",col:"#7fc7ff"}};
+               win:{label:"Winterdienst",col:"#7fc7ff"},sp:{label:"Spezial-/Zwischenreinigung",col:"#ff9f43"}};
 // Feiertage ZH 2026 (KW) — Freitags-/Werktagsfeiertage
 const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Karfreitag"},
   {kw:15,d:1,n:"Ostermontag"},{kw:18,d:5,n:"1.Mai"},{kw:20,d:4,n:"Auffahrt"},
@@ -398,11 +405,9 @@ function buildDefault(){
   }
   // Touren anlegen
   const tours=[];
-  const eqFor=o=>o.cat==="garten"?"garten":o.cat==="buero"?"abend":"tag";
-  // Je Equipe: Objekte auf möglichst wenige Touren zu je 90–100% packen (Next-Fit, geografisch),
-  // die letzte Tour trägt den Rest (C13). Tourenzahl ist damit aus der Last abgeleitet, nicht fix.
-  ["tag","garten","abend"].forEach(eq=>{
-    const group=objs.filter(o=>eqFor(o)===eq);
+  // Je Equipe: Objekte MIT Arbeit für diese Equipe (per-service) auf möglichst wenige Touren packen (C13).
+  EQUIPES.forEach(eq=>{
+    const group=objs.filter(o=>weeklyAvgMin(o,eq)>0);
     packGroup(group,eq,PERS[eq]).forEach((bin,i)=>tours.push({
       id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),
       vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin.map(o=>o.id),ferienKW:[]}));
@@ -441,19 +446,74 @@ function objMinInWeek(o,kw,eq){
   return m;
 }
 
+/* ============ Geglätteter Wochen-Fahrplan je Tour (Level-Loading, C2/C13) ============
+   Periodische Leistungen (Grund-/Monats-/Quartalsreinigung, Winterdienst …) werden NICHT starr
+   in eine feste Woche gelegt, sondern jede Einzel-Ausführung auf die aktuell LEICHTESTE zulässige
+   Woche verteilt. So bleibt die Wochenlast über das Jahr möglichst flach → keine 12h-Spitzenwochen. */
+let SCHED_CACHE=null;
+function invalidateSchedule(){ SCHED_CACHE=null; }
+function eligibleWeeks(k){ const w=[]; for(let kw=1;kw<=52;kw++){
+    if(k==="ga" && (kw<12||kw>44)) continue;      // Gartensaison Mrz–Nov
+    if(k==="win" && !WINTER_KW(kw)) continue;      // Winterdienst nur Winterwochen
+    w.push(kw);
+  } return w; }
+function tourSchedule(t){
+  if(!SCHED_CACHE) SCHED_CACHE={};
+  if(SCHED_CACHE[t.id]) return SCHED_CACHE[t.id];
+  const objs=t.objs.map(objById).filter(Boolean);
+  const weekMin=new Array(53).fill(0);
+  const weekItems=Array.from({length:53},()=>[]);      // weekItems[kw] = [{oid,k,min}]
+  const periodic=[];
+  objs.forEach(o=>{
+    (o.services||[]).forEach(s=>{
+      if(serviceEq(o,s)!==t.eq) return;                 // nur Arbeiten DIESER Equipe (per-service)
+      if(!(s.min>0) || !(s.freq>0)) return;
+      const elig=eligibleWeeks(s.k);
+      if(!elig.length) return;
+      if(s.freq>=52 || s.freq>=elig.length){             // (nahezu) jede zulässige Woche
+        elig.forEach(kw=>{ weekMin[kw]+=s.min; weekItems[kw].push({oid:o.id,k:s.k,min:s.min}); });
+      } else {
+        periodic.push({o,s,elig});
+      }
+    });
+  });
+  // Wochen-Kapazität (feiertags-/ferienbewusst): weniger Werktage ⇒ weniger Platz ⇒ periodische Arbeit meiden
+  const persons=t.persons||1;
+  const cap=new Array(53).fill(1);
+  for(let kw=1;kw<=52;kw++){
+    const wd=[0,1,2,3,4].filter(d=>!HOLIDAYS.some(h=>h.kw===kw&&h.d===d+1)).length;
+    const avail=persons-(t.ferienKW||[]).filter(w=>w===kw).length;
+    cap[kw]= (avail<=0)?0.001 : wd*DAYTARGET*avail;   // absente Woche fast ausschliessen
+  }
+  // Grösste Einzelleistungen zuerst → auf die Woche mit der tiefsten AUSLASTUNG (Last/Kapazität) legen
+  periodic.sort((a,b)=> b.s.min-a.s.min);
+  periodic.forEach(p=>{
+    const used=new Set();
+    for(let i=0;i<p.s.freq;i++){
+      let best=-1,bl=1e9;
+      for(const kw of p.elig){ if(used.has(kw))continue; const r=(weekMin[kw]+p.s.min)/cap[kw]; if(r<bl){bl=r;best=kw;} }
+      if(best<0){ for(const kw of p.elig){ const r=(weekMin[kw]+p.s.min)/cap[kw]; if(r<bl){bl=r;best=kw;} } }
+      if(best<0) break;
+      used.add(best);
+      weekMin[best]+=p.s.min; weekItems[best].push({oid:p.o.id,k:p.s.k,min:p.s.min});
+    }
+  });
+  const res={weekMin,weekItems};
+  SCHED_CACHE[t.id]=res; return res;
+}
+// Objekt→Minuten-Map einer Tour in KW (aus dem geglätteten Fahrplan)
+function tourWeekObjMap(t,kw){ const m={}; tourSchedule(t).weekItems[kw].forEach(it=>{m[it.oid]=(m[it.oid]||0)+it.min;}); return m; }
+
 /* ============ Tour-Wochenlast (Arbeit + Fahrt) ============ */
 function absentPersons(t,kw){ return t.ferienKW.filter(w=>w===kw).length; }
-function tourWorkMin(t,kw){ // reine Arbeitsminuten der eigenen Objekte in KW
-  let m=0; for(const id of t.objs){const o=objById(id); if(o) m+=objMinInWeek(o,kw,t.eq);} return m;
-}
-function tourDriveMin(t,kw,workObjs){ // Fahrzeit Kloten->1.->... (keine Rückfahrt)
-  const objs=(workObjs||t.objs.map(objById)).filter(Boolean).filter(o=>objMinInWeek(o,kw,t.eq)>0);
+function tourWorkMin(t,kw){ return tourSchedule(t).weekMin[kw]||0; }   // geglättete Arbeitsminuten der KW
+function tourDriveMin(t,kw){ // Fahrzeit Kloten->1.->... über die in dieser KW aktiven Objekte (keine Rückfahrt)
+  const map=tourWeekObjMap(t,kw);
+  const objs=Object.keys(map).map(objById).filter(Boolean);
   if(!objs.length) return 0;
-  // pro Werktag: nearest-neighbor Kette; Fahrt einmal pro Tag Home->1.
   const order=nnOrder(objs);
   let drive=distMin(HOME,order[0]);
   for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
-  // grob auf 5 Tage: Home-Anfahrt zählt einmal je Tag; Kette bleibt
   return drive;
 }
 function nnOrder(objs){
@@ -477,19 +537,18 @@ function computeCoverage(kw){
   // Objekte voll abwesender Touren auf Equipe-Kollegen verteilen (Bin-Packing, grösste freie Kap zuerst)
   DATA.tours.forEach(t=>{
     if(res[t.id].avail>0) return;
-    const spill=[]; for(const id of t.objs){const o=objById(id); if(o&&objMinInWeek(o,kw,t.eq)>0) spill.push(o);}
-    const peers=eqGroups[t.eq].filter(p=>p.id!==t.id&&res[p.id].avail>0);
-    for(const o of spill.sort((a,b)=>objMinInWeek(b,kw,t.eq)-objMinInWeek(a,kw,t.eq))){
-      const need=objMinInWeek(o,kw,t.eq);
-      // freie Kapazität je Kollege bis 45h-Äquivalent der eigenen Schicht (Überstunden in Deckungswochen)
+    const wmap=tourWeekObjMap(t,kw);                 // geglättete Minuten je Objekt dieser KW
+    const spill=[]; for(const id of Object.keys(wmap)){const o=objById(id); if(o&&wmap[id]>0) spill.push({o,need:wmap[id]});}
+    // Abdeckung: ZUERST Spezialequipe (deckt Ferien/Krankheit ab), sonst gleiche Equipe.
+    const spezialPeers=(eqGroups['spezial']||[]).filter(p=>p.id!==t.id&&res[p.id].avail>0);
+    const samePeers=(eqGroups[t.eq]||[]).filter(p=>p.id!==t.id&&res[p.id].avail>0);
+    const freeOf=p=>{const perCap=PERPERSON[p.eq]*45/42; const load=(tourWorkMin(p,kw)+tourDriveMin(p,kw)+res[p.id].extra)/res[p.id].avail; return perCap-load;};
+    for(const sp of spill.sort((a,b)=>b.need-a.need)){
+      const o=sp.o, need=sp.need;
       let best=null,bestFree=-1;
-      for(const p of peers){
-        const perCap=PERPERSON[p.eq]*45/42; // 45h-Deckel je Person (Tag/Garten 2700, Abend anteilig)
-        const load=(tourWorkMin(p,kw)+tourDriveMin(p,kw)+res[p.id].extra)/res[p.id].avail;
-        const free=perCap-load;
-        if(free>bestFree){bestFree=free;best=p;}
-      }
-      if(best&&bestFree>=need){res[best.id].extra+=need;res[best.id].taken.push({obj:o.id,from:t.id});}
+      for(const p of spezialPeers){const f=freeOf(p); if(f>=need && f>bestFree){bestFree=f;best=p;}}   // 1) Spezial bevorzugt
+      if(!best){ for(const p of samePeers){const f=freeOf(p); if(f>bestFree){bestFree=f;best=p;}} }      // 2) sonst Equipe-Kollege
+      if(best&&bestFree>=need){res[best.id].extra+=need;res[best.id].taken.push({obj:o.id,from:t.id,min:need});}
       else res[t.id].spillToAblose=(res[t.id].spillToAblose||0)+need;
     }
   });
@@ -531,107 +590,90 @@ function costs(){
 
 /* ============ Kalender-Belegung einer Woche (C1,C2,C7,C8) ============ */
 function briefLenFor(t){ return (t.briefing)?BRIEF.len:0; }
+// Platziert `mins` Minuten ab Stunde `start`, überspringt Pausen (breaks=[[a,b],…] in Stunden: Mittag/Briefing)
+function placeSegs(start, mins, breaks){
+  const segs=[]; let s=start, rem=mins;
+  const skip=()=>{ for(const br of breaks){ if(s>=br[0]-1e-6 && s<br[1]-1e-6) s=br[1]; } };
+  skip(); let guard=0;
+  while(rem>0.01 && guard++<60){
+    let nb=null; for(const br of breaks){ if(br[0]> s-1e-6 && (nb===null||br[0]<nb[0])) nb=br; }
+    const endNo=s+rem/60;
+    if(nb && endNo>nb[0]+1e-9){
+      const chunk=(nb[0]-s)*60;
+      if(chunk>0.4){ segs.push([s,nb[0]]); rem-=chunk; }
+      s=nb[1]; skip();
+    } else { segs.push([s,endNo]); s=endNo; rem=0; }
+  }
+  return {segs,end:s};
+}
 function buildWeek(t,kw,cov){
-  // Liefert je Werktag (0..4) Array von Blöcken {startH,endH,label,sub,col,cls}
+  // Liefert je Werktag (0..4) Array von Blöcken {s,e,label,sub,col,cls} + Überlauf/Überzeit-Infos
   const days=[[],[],[],[],[]];
   const eqw=EQ[t.eq];
   const avail=t.persons-absentPersons(t,kw);
-  if(avail<=0){ // ganze Ferienwoche
-    const parts=[]; if(cov&&cov[t.id]?.spillToAblose) parts.push("Rest → Ablöse-Tour");
-    return {blocked:"🏖 Ferien",note:distribNote(t,kw,cov)};
-  }
-  // eigene Objekte dieser Woche
-  let objs=t.objs.map(objById).filter(Boolean).filter(o=>objMinInWeek(o,kw,t.eq)>0);
-  // Deckel maxUtil: gib Objekte ab, wenn über Deckel (nur Anzeigelogik minimal)
-  const order=nnOrder(objs);
-  // übernommene Ferienabdeckung
+  if(avail<=0){ return {blocked:"🏖 Ferien",note:distribNote(t,kw,cov)}; }
+  // Objekte dieser Woche aus dem GEGLÄTTETEN Fahrplan + übernommene Ferienabdeckung
+  const wmap=tourWeekObjMap(t,kw);
+  const order=nnOrder(Object.keys(wmap).map(objById).filter(Boolean));
   const taken=(cov&&cov[t.id]?.taken)||[];
-  // Wochentotal
-  let items=[];
+  const items=[];
   const drivePre=order.length?distMin(HOME,order[0]):0;
-  order.forEach((o,i)=>{
-    const dr=i===0?distMin(HOME,o):distMin(order[i-1],o);
-    items.push({o,min:objMinInWeek(o,kw,t.eq),drive:dr,cov:false});
-  });
-  taken.forEach(tk=>{const o=objById(tk.obj);if(o)items.push({o,min:objMinInWeek(o,kw,t.eq),drive:6,cov:true,from:tk.from});});
-  const totalWork=items.reduce((a,x)=>a+x.min+x.drive,0)/avail;
-  // Feiertage dieser Woche
+  order.forEach((o,i)=>{ items.push({o,min:wmap[o.id],drive:i===0?distMin(HOME,o):distMin(order[i-1],o),cov:false}); });
+  taken.forEach(tk=>{const o=objById(tk.obj);if(o)items.push({o,min:tk.min||0,drive:6,cov:true,from:tk.from});});
+  const totalWork=items.reduce((a,x)=>a+x.min+x.drive,0)/avail;   // Minuten je Person/Woche
   const holiDays=new Set(); HOLIDAYS.filter(h=>h.kw===kw).forEach(h=>holiDays.add(h.d-1));
   const workDays=[0,1,2,3,4].filter(d=>!holiDays.has(d));
-  const briefLen=briefLenFor(t);
-  const briefDay=(BRIEF.day-1);
-  // Tagesziele gleichmässig (C2)
-  const weights=workDays.map(d=>DAYTARGET-((t.briefing&&d===briefDay&&!holiDays.has(briefDay))?briefLen:0));
-  const wsum=weights.reduce((a,b)=>a+b,0);
-  const perDayTarget=workDays.map((d,i)=>totalWork*weights[i]/wsum);
-  // Fülle Tag für Tag — je Objekt zuerst ein FAHRT-Chunk (grau), dann der ARBEITS-Chunk (farbig).
-  // Kapazitätsneutral: Summe Fahrt+Arbeit bleibt gleich wie bisher, nur getrennt dargestellt.
-  let queue=[];
-  items.forEach(it=>{
-    if(it.drive>0.5) queue.push({kind:"drive",min:it.drive,o:it.o,cov:it.cov,from:it.from});
-    queue.push({kind:"work",min:it.min,o:it.o,cov:it.cov,from:it.from});
-  });
+  const briefLen=briefLenFor(t), briefDay=(BRIEF.day-1);
+  const bs=parseFloat(BRIEF.start.split(":")[0])+parseFloat(BRIEF.start.split(":")[1])/60, be=bs+briefLen/60;
   const [ws,we]=eqw.work;
-  const dayDrive=[];   // Home → erstes Objekt je Werktag (Anfahrt, Kopfzeile)
+  // Tages-Kapazität: Norm (ohne Überzeit) und Maximum (+1h). Briefing zehrt an der Norm des Briefing-Tags.
+  const capNoOT=workDays.map(d=> DAYTARGET - ((t.briefing&&d===briefDay&&!holiDays.has(briefDay))?briefLen:0));
+  const capMax =capNoOT.map(c=> c+OT_MAX);
+  const capSum =capNoOT.reduce((a,b)=>a+b,0)||1;
+  // gleichmässig verteilen; reicht es ohne Überzeit → jeder Tag ≤ Norm. Sonst bis max. +1h, Rest = Überlauf.
+  const perDayLimit=workDays.map((d,i)=> Math.min(capMax[i], totalWork*capNoOT[i]/capSum));
+  // Chunk-Queue: je Objekt zuerst Fahrt (grau), dann Arbeit (farbig)
+  let queue=[];
+  items.forEach(it=>{ if(it.drive>0.5) queue.push({kind:"drive",min:it.drive,o:it.o,cov:it.cov,from:it.from}); queue.push({kind:"work",min:it.min,o:it.o,cov:it.cov,from:it.from}); });
+  const dayDrive=[]; let otUsed=false;
   workDays.forEach((d,i)=>{
-    let cursor=ws, filled=0; const target=perDayTarget[i]; let firstOfDay=true;
-    while(queue.length && filled< target-1){
+    const briefToday = t.briefing && d===briefDay && !holiDays.has(briefDay);
+    const breaks=[]; if(t.eq!=="abend") breaks.push([12,13]); if(briefToday) breaks.push([bs,be]);  // Briefing an Randzeit ⇒ keine Arbeit auf der anderen Seite
+    breaks.sort((a,b)=>a[0]-b[0]);
+    let cursor=ws, filled=0; const limit=perDayLimit[i]; let firstOfDay=true;
+    while(queue.length && filled< limit-0.5){
       const ch=queue[0];
       if(firstOfDay){ dayDrive[d]=distMin(HOME,ch.o); firstOfDay=false; }
-      const cont=!!ch._started;                 // schon an einem Vortag/vorher begonnen
+      const cont=!!ch._started;
       const need=(ch._rest!=null?ch._rest:ch.min);
-      const room=target-filled;
-      const place=Math.min(need,room);
-      // Zeit setzen mit Mittagspause 12-13
-      let segStart=cursor, remaining=place;
-      const seg=[];
-      while(remaining>0){
-        if(t.eq!=="abend"){
-          if(segStart<12 && segStart+remaining/60>12){ // splittet über Mittag
-            const before=(12-segStart)*60;
-            seg.push([segStart,12]); remaining-=before; segStart=13;
-            continue;
-          }
-          if(segStart>=12&&segStart<13) segStart=13;
-        }
-        const endH=segStart+remaining/60;
-        seg.push([segStart,endH]); segStart=endH; remaining=0;
-      }
-      cursor=seg[seg.length-1][1];
+      const place=Math.min(need, limit-filled);
+      const {segs,end}=placeSegs(cursor, place, breaks); cursor=end;
       if(ch.kind==="drive"){
-        seg.forEach((sg,si)=>{
-          days[d].push({s:sg[0],e:sg[1],oid:null,cov:false,drive:true,
-            label:"🚗 Fahrt"+((cont||si>0)?" (Forts.)":"")+" → "+ch.o.id,
-            sub:"nach "+(ch.o.street||ch.o.ort||"")+" · "+Math.round(ch.min)+"′",
-            title:"Fahrzeit zu "+ch.o.id+" · "+(ch.o.plz||"")+" "+(ch.o.ort||""),
-            col:"#8a94a6", cls:"drive"});
-        });
+        segs.forEach((sg,si)=>days[d].push({s:sg[0],e:sg[1],oid:null,cov:false,drive:true,
+          label:"🚗 Fahrt"+((cont||si>0)?" (Forts.)":"")+" → "+ch.o.id,
+          sub:"nach "+(ch.o.street||ch.o.ort||"")+" · "+Math.round(ch.min)+"′",
+          title:"Fahrzeit zu "+ch.o.id+" · "+(ch.o.plz||"")+" "+(ch.o.ort||""), col:"#8a94a6", cls:"drive"}));
         ch._started=true;
       } else {
         const svc=dominantService(ch.o,kw,t.eq); const col=SERVICE[svc]?.col||"#4aa3ff";
-        seg.forEach((sg,si)=>{
-          const isCont=cont||si>0;
+        segs.forEach((sg,si)=>{ const isCont=cont||si>0;
           days[d].push({s:sg[0],e:sg[1],oid:ch.o.id,cov:!!ch.cov,
             label:(ch.cov?"🔁 ":"")+(isCont?"↪ ":"")+ch.o.id+(ch.cov?(" · Ablöse "+ch.from):""),
             sub:isCont?"(Forts.) "+ch.o.street:(ch.o.street+" · "+ch.o.kunde+" · "+Math.round(ch.min)+"′"),
             title:(isCont?"Fortsetzung vom Vortag · ":"")+ch.o.plz+" "+ch.o.ort+" · "+(SERVICE[svc]?.label||""),
-            col, cls:ch.cov?"cov":""});
-          ch._started=true;
-        });
+            col, cls:ch.cov?"cov":""}); });
+        ch._started=true;
       }
-      filled+=place;
-      if(place>=need){queue.shift();} else {ch._rest=need-place; break;}
+      filled+=place; if(filled>capNoOT[i]+0.5) otUsed=true;
+      if(place>=need-0.01){queue.shift();} else {ch._rest=need-place; break;}
     }
-    // Briefing
-    if(t.briefing && d===briefDay && !holiDays.has(briefDay)){
-      const bs=parseFloat(BRIEF.start.split(":")[0])+parseFloat(BRIEF.start.split(":")[1])/60;
-      days[d].push({s:bs,e:bs+briefLen/60,label:"📋 Briefing",sub:"Hauptsitz Kloten",col:"#f0932b",cls:"brief",title:"Freitags-Briefing Hauptsitz Kloten"});
-    }
+    if(briefToday) days[d].push({s:bs,e:be,label:"📋 Briefing",sub:"Hauptsitz Kloten",col:"#f0932b",cls:"brief",title:"Briefing — an diesem Tag keine Arbeit auf der anderen Seite"});
   });
-  return {days,drivePre,dayDrive,totalWork,holiDays,workDays};
+  const overflow=Math.round(queue.reduce((a,ch)=>a+(ch._rest!=null?ch._rest:ch.min),0));   // passt nicht in die Woche (je Person)
+  return {days,drivePre,dayDrive,totalWork,holiDays,workDays,overflow,otUsed};
 }
-function dominantService(o,kw,eq){let best="ur",bm=0;o.services.forEach(s=>{
-  if(s.k==="ga"&&eq!=="garten")return; if(s.k==="win"&&!WINTER_KW(kw))return;
+function dominantService(o,kw,eq){let best="ur",bm=-1;(o.services||[]).forEach(s=>{
+  if(serviceEq(o,s)!==eq)return; if(s.k==="win"&&!WINTER_KW(kw))return;
   if(s.min>bm){bm=s.min;best=s.k;}});return best;}
 function distribNote(t,kw,cov){
   const c=cov&&cov[t.id]; if(!c)return"";
@@ -688,7 +730,7 @@ function buildTourCard(t){
 function renderTourGrid(){
   if(!Array.isArray(DATA.staff)){DATA.staff=fictitiousStaffList();persist();}  // fiktive MA je Slot, damit Touren besetzt starten
   const box=$("#tourGrid"); box.innerHTML="";
-  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["abend","🌙 Abendreinigung"]];
+  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["abend","🌙 Abendreinigung"],["spezial","✨ Spezialreinigung"]];
   groups.forEach(([eq,label])=>{
     const ts=DATA.tours.filter(t=>t.eq===eq); if(!ts.length) return;
     const avg=Math.round(ts.reduce((a,t)=>a+tourYear(t).avg,0)/ts.length);
@@ -708,9 +750,10 @@ function setMaxUtil(t,v){const [lo,hi]=maxUtilRange(t.eq);t.maxUtil=clamp(v,lo,h
 
 /* ============ Umplanen / Packen (C13) — mit harter 105%-Jahresgrenze ============ */
 const ANNUAL_CAP=105;   // Gesamtarbeitszeit/Jahr je Person darf max. 105% des Pensums sein (5%-Hürde)
-function weeklyAvgMin(o,eq){                          // Jahres-Wochen-Ø eines Objekts (Arbeit, ohne Fahrt)
-  return o.services.reduce((a,s)=>{
-    if(s.k==="ga"&&eq!=="garten")return a;
+function weeklyAvgMin(o,eq){                          // Jahres-Wochen-Ø eines Objekts für EINE Equipe (Arbeit, ohne Fahrt)
+  return (o.services||[]).reduce((a,s)=>{
+    if(!(s.min>0)||!(s.freq>0)) return a;
+    if(serviceEq(o,s)!==eq) return a;                 // nur Arbeiten dieser Equipe
     return a+(s.freq>=52?s.min:s.min*s.freq/52);
   },0);
 }
@@ -728,7 +771,8 @@ function targetUtil(eq){ return PERPERSON[eq]/WEEKMIN*100; }
 function physCeil(eq){ return targetUtil(eq)*ANNUAL_CAP/100; }
 // Zulässiger max%-Bereich der Tour-Steuerung (Anzeige-Basis 42h): min. 40%, max. physische Hürde.
 function maxUtilRange(eq){ return [40, Math.round(physCeil(eq))]; }
-function defaultMaxUtil(eq){ return Math.round(targetUtil(eq)); }   // Tag/Garten 100, Abend 54
+const TARGET_FILL=0.90;   // Standard-Ziel%: 90% der Schichtkapazität → 10% Puffer für Spitzen/Feiertage
+function defaultMaxUtil(eq){ return Math.round(targetUtil(eq)*TARGET_FILL); }   // Tag/Garten/Spezial 90, Abend ~48
 // Ziel eines Bins = die max%-Vorgabe der Tour an dieser Position (oder Equipe-Default), hart auf die Hürde geklemmt.
 function binTarget(caps,i,eq){ const [lo,hi]=maxUtilRange(eq); return clamp((caps&&caps[i]!=null)?caps[i]:defaultMaxUtil(eq),lo,hi); }
 // Packt eine Objektgruppe (Next-Fit, geografische Kette). Jede Tour wird bis zu IHRER max%-Vorgabe gefüllt
@@ -778,26 +822,31 @@ function tourTravel(t){
   const tot=work+drive;
   return {work,drive,share:tot?drive/tot*100:0};
 }
-function packEquipe(eq){
+function packEquipe(eq, shrink){
   const existing=DATA.tours.filter(t=>t.eq===eq);
   const persons=existing[0]?.persons||PERS[eq];
-  const objs=[]; existing.forEach(t=>t.objs.forEach(id=>{const o=objById(id);if(o)objs.push(o);}));
-  if(!objs.length){ DATA.tours=DATA.tours.filter(t=>t.eq!==eq); return; }
+  // Objekte dieser Equipe = alle mit Arbeit für diese Equipe (per-service). Ein Objekt kann in mehreren Equipen sein.
+  const objs=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0);
+  if(!objs.length){ existing.forEach(t=>t.objs=[]); return; }   // keine Arbeit → Touren leeren, aber NICHT löschen
   const caps=existing.map(t=>t.maxUtil);         // je Tour ihre max%-Vorgabe (Position = Reihenfolge)
   const bins=packGroup(objs,eq,persons,caps);
-  const rebuilt=bins.map((bin,i)=>{const e=existing[i];
-    return {id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
+  // Tourenzahl: mehr Last → wächst; ohne shrink werden manuell angelegte (leere) Touren NICHT verworfen.
+  // Nur „Umplanen (optimieren)" (shrink=true) darf auf die Mindestanzahl verdichten.
+  const count=shrink?bins.length:Math.max(bins.length,existing.length);
+  const rebuilt=[];
+  for(let i=0;i<count;i++){ const e=existing[i], bin=bins[i]||[];
+    rebuilt.push({id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
       maxUtil:e?e.maxUtil:defaultMaxUtil(eq), vehicle:e?e.vehicle:(eq!=="abend"),
-      briefing:e?e.briefing:(eq!=="abend"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)};});
+      briefing:e?e.briefing:(eq!=="abend"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)}); }
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
 }
-function reorderTours(){const rank={tag:0,garten:1,abend:2};
+function reorderTours(){const rank={tag:0,garten:1,abend:2,spezial:3};
   DATA.tours.sort((a,b)=>(rank[a.eq]-rank[b.eq])||a.id.localeCompare(b.id));}
 function ensureCurTour(){ if(!DATA.tours.find(t=>t.id===curTour)) curTour=DATA.tours[0]?.id; }
 function redistributeCrew(eq){ packEquipe(eq); }       // Personal-/Deckeländerung → neu packen
 function optimizeAll(){
-  ["tag","garten","abend"].forEach(packEquipe);
+  EQUIPES.forEach(eq=>packEquipe(eq,true));   // shrink=true: auf Mindestanzahl verdichten
   persist(); ensureCurTour(); renderAll();
   flash("🔄 Gepackt — keine Tour über 105% Jahres-Auslastung");
 }
@@ -806,14 +855,18 @@ function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))r
   DATA.tours=DATA.tours.filter(t=>t.id!==id);if(curTour===id)curTour=DATA.tours[0]?.id;persist();renderAll();}
 function addTour(eq){let n=1;while(DATA.tours.find(t=>t.id===EQ[eq].short+String(n).padStart(2,"0")))n++;
   DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),vehicle:eq!=="abend",briefing:eq!=="abend",objs:[],ferienKW:[]});persist();renderAll();}
-function moveObj(objId,toTour){const from=DATA.tours.find(t=>t.objs.includes(objId));const to=DATA.tours.find(t=>t.id===toTour);
-  if(!from||!to||from.id===to.id)return;from.objs=from.objs.filter(x=>x!==objId);to.objs.push(objId);persist();renderAll();flash("Objekt "+objId+" → "+to.id);}
+function moveObj(objId,toTour){const to=DATA.tours.find(t=>t.id===toTour);if(!to)return;
+  const from=DATA.tours.find(t=>t.eq===to.eq&&t.objs.includes(objId));   // nur innerhalb DERSELBEN Equipe umhängen
+  if(from&&from.id===to.id)return;
+  if(from) from.objs=from.objs.filter(x=>x!==objId);
+  if(!to.objs.includes(objId)) to.objs.push(objId);
+  persist();renderAll();flash("Objekt "+objId+" → "+to.id);}
 
 /* ============ Tour-Auswahl ============ */
 function fillTourSelect(){
   const sel=$("#tourSelect");sel.innerHTML="";
-  const groups={tag:"Hauswart",garten:"Garten",abend:"Abend"};
-  ["tag","garten","abend"].forEach(eq=>{
+  const groups={tag:"Hauswart",garten:"Garten",abend:"Abend",spezial:"Spezial"};
+  EQUIPES.forEach(eq=>{
     const g=document.createElement("optgroup");g.label=groups[eq];
     DATA.tours.filter(t=>t.eq===eq).forEach(t=>{const o=document.createElement("option");o.value=t.id;o.textContent=t.id+" · "+t.objs.length+" Obj";g.appendChild(o);});
     sel.appendChild(g);
@@ -837,6 +890,51 @@ function renderPlanKpi(){
     <div class="box"><b>${c.vehicles}</b><span>Fahrzeuge · ${chf(c.fzTotal)}</span></div>
     <div class="box"><b>${chf(c.total)}</b><span>Personalkosten/Jahr</span></div>`;
 }
+/* ============ Empfehlungen des Planers ============ */
+function planSuggestions(){
+  const tips=[]; const staff=DATA.staff||[];
+  const covByKw={}; for(let kw=1;kw<=52;kw++) covByKw[kw]=computeCoverage(kw);   // einmal, für alle Touren
+  const yById={}; DATA.tours.forEach(t=>yById[t.id]=tourYear(t));
+  let holiTours=0;   // Touren, die NUR in Feiertagswochen leicht überlaufen (5 Tage Arbeit in 4)
+  DATA.tours.forEach(t=>{
+    const y=yById[t.id], tr=tourTravel(t);
+    let ovNorm=0,ovHoli=0,worstN=0;
+    for(let kw=1;kw<=52;kw++){ const wk=buildWeek(t,kw,covByKw[kw]); if(wk.blocked||wk.overflow<=15)continue;
+      const isH=[0,1,2,3,4].some(d=>HOLIDAYS.some(h=>h.kw===kw&&h.d===d+1));
+      if(isH) ovHoli++; else { ovNorm++; worstN=Math.max(worstN,wk.overflow); } }
+    const staffed=staff.filter(s=>s.tid===t.id).length;
+    if(staffed<t.persons) tips.push({level:'bad',text:`${t.id}: nicht besetzt (${staffed}/${t.persons}). Person zuteilen (Reiter Personal).`});
+    if(ovNorm>0) tips.push({level:'bad',text:`${t.id}: ${ovNorm} reguläre Woche(n) überlastet (bis ${(worstN/60).toFixed(1)}h/Person zu viel). ➜ zusätzliche Tour, Objekt weglassen/umverteilen, oder max% senken.`});
+    else if(y.peak>108) tips.push({level:'warn',text:`${t.id}: Spitzenwoche ${nf(y.peak)}% (mit ≤1h Überzeit gelöst). Für mehr Puffer max% senken.`});
+    if(ovNorm===0 && ovHoli>0) holiTours++;
+    if(y.avg < defaultMaxUtil(t.eq)*0.55 && t.objs.length) tips.push({level:'info',text:`${t.id}: gering ausgelastet (Ø ${nf(y.avg)}%). ➜ mit Nachbar-Tour zusammenlegen oder weglassen.`});
+    if(tr.share>DETOUR_SHARE) tips.push({level:'warn',text:`${t.id}: hoher Fahrtanteil ${nf(tr.share)}%. ➜ Objekte umverteilen oder als 2-Personen-Tour prüfen (Weg wird geteilt).`});
+  });
+  if(holiTours>0) tips.push({level:'info',text:`${holiTours} Tour(en) nur in Feiertagswochen leicht überlastet (5 Arbeitstage in 4). ➜ betroffene Leistungen auf Nachbarwochen verschieben oder Überzeit einplanen — keine Zusatztour nötig.`});
+  const unassigned=staff.filter(s=>s.tid&&!DATA.tours.some(t=>t.id===s.tid)).length;
+  if(unassigned>0) tips.push({level:'warn',text:`${unassigned} Mitarbeitende nicht eingeteilt. ➜ im Reiter Personal einer Tour zuweisen.`});
+  EQUIPES.forEach(eq=>{
+    const ts=DATA.tours.filter(t=>t.eq===eq); if(ts.length<2)return;
+    const totalAvg=ts.reduce((a,t)=>a+yById[t.id].avg,0);
+    const totalObjs=ts.reduce((a,t)=>a+t.objs.length,0);
+    const needed=Math.max(1,Math.ceil(totalAvg/targetUtil(eq)),Math.ceil(totalObjs/MAXOBJ[eq]));  // auch Objekt-Obergrenze je Tour beachten
+    if(needed<ts.length) tips.push({level:'info',text:`${EQ[eq].label.split(' ')[0]}: ${ts.length} Touren bei Ø-Summe ${nf(totalAvg)}% — rechnerisch ${needed} möglich. ➜ verdichten spart Fahrzeug + Personal (aber prüfe Wege).`});
+  });
+  return tips;
+}
+function renderPlanTips(){
+  const box=$("#planTips"); if(!box)return;
+  const tips=planSuggestions();
+  if(!tips.length){ box.innerHTML=`<div class="card" style="border-left:4px solid var(--ok);padding:10px 14px"><b>💡 Empfehlungen</b> <span class="muted">— keine Auffälligkeiten, Plan im grünen Bereich.</span></div>`; return; }
+  const order={bad:0,warn:1,info:2}; tips.sort((a,b)=>order[a.level]-order[b.level]);
+  const bad=tips.filter(t=>t.level==='bad').length;
+  const col={bad:'var(--bad)',warn:'#e0a800',info:'var(--mut)'}, ic={bad:'⛔',warn:'⚠',info:'💡'};
+  box.innerHTML=`<div class="card" style="border-left:4px solid ${bad?'var(--bad)':'#e0a800'};padding:10px 14px">
+    <b>💡 Empfehlungen des Planers (${tips.length})</b>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+    ${tips.map(t=>`<div style="font-size:13px;border-left:3px solid ${col[t.level]};padding-left:8px">${ic[t.level]} ${t.text}</div>`).join("")}
+    </div></div>`;
+}
 
 /* ============ Detail + Kalender ============ */
 function renderDetail(){
@@ -849,6 +947,8 @@ function renderDetail(){
   let hint="";
   if(cov[t.id]?.partial) hint=`<div class="hint">Teil-Abwesenheit (${cov[t.id].absent} P weg) — verbleibende Person übernimmt die Route.</div>`;
   if(HOLIDAYS.some(h=>h.kw===curKW)) hint+=`<div class="hint">Feiertag in dieser Woche: Arbeit verteilt sich auf die übrigen Werktage.</div>`;
+  if(wk.overflow>15) hint+=`<div class="hint" style="border-color:var(--bad);color:var(--bad)">⚠ Überlast in dieser Woche: ${wk.overflow}′ (≈${(wk.overflow/60).toFixed(1)}h/Person) passen NICHT in die Woche — nicht auf die Tage gedrückt. Empfehlung: Objekt/Leistung auf eine andere Woche legen, umverteilen oder zusätzliche Tour (siehe Empfehlungen).</div>`;
+  else if(wk.otUsed) hint+=`<div class="hint">Diese Woche mit etwas Überzeit (≤1h/Tag) geplant — noch im Rahmen.</div>`;
   $("#weekHint").innerHTML=hint;
   renderCalendar(t,wk);
   renderYearStrip(t);
@@ -911,13 +1011,14 @@ function renderYearStrip(t){
 }
 function renderObjList(t){
   const cov=computeCoverage(curKW);
-  const objs=t.objs.map(objById).filter(Boolean).filter(o=>objMinInWeek(o,curKW,t.eq)>0);
+  const wmap=tourWeekObjMap(t,curKW);
+  const objs=Object.keys(wmap).map(objById).filter(Boolean);
   $("#objCount").textContent="("+objs.length+")";
   const box=$("#objList");box.innerHTML="";
   objs.forEach(o=>{
     const d=document.createElement("div");d.className="pill";d.draggable=true;
     d.style.cssText="display:block;margin:3px 0;padding:5px 8px;cursor:grab;background:var(--panel2);color:var(--ink)";
-    d.textContent=o.id+" · "+o.street+" · "+o.kunde+" · "+Math.round(objMinInWeek(o,curKW,t.eq))+"′";
+    d.textContent=o.id+" · "+o.street+" · "+o.kunde+" · "+Math.round(wmap[o.id])+"′";
     d.addEventListener("dragstart",()=>{window._dragObj=o.id;});
     box.appendChild(d);
   });
@@ -929,7 +1030,7 @@ function renderObjList(t){
 /* ============ Karte (SVG) ============ */
 function renderMap(){
   if(!DATA.objs.length){$("#mapEquipe").innerHTML="";$("#mapBox").innerHTML="";$("#mapLegend").innerHTML="";return;}
-  $("#mapEquipe").innerHTML=["tag","garten","abend"].map(e=>`<button class="sm ${mapEq===e?'':'ghost'}" data-eq="${e}">${EQ[e].label.split(" ")[0]}</button>`).join("");
+  $("#mapEquipe").innerHTML=EQUIPES.map(e=>`<button class="sm ${mapEq===e?'':'ghost'}" data-eq="${e}">${EQ[e].label.split(" ")[0]}</button>`).join("");
   $$("#mapEquipe button").forEach(b=>b.onclick=()=>{mapEq=b.dataset.eq;renderMap();});
   const tours=DATA.tours.filter(t=>t.eq===mapEq);
   const cols=["#4aa3ff","#38c172","#f0932b","#e74c3c","#9b6bff","#1abc9c","#e67e22","#3498db","#e84393","#00b894","#fdcb6e","#6c5ce7"];
@@ -959,7 +1060,7 @@ function renderObjekte(){
   DATA.objs.forEach(o=>{
     const cur=DATA.tours.find(t=>t.objs.includes(o.id));
     let sel=`<select data-obj="${o.id}">`;
-    ["tag","garten","abend"].forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
+    EQUIPES.forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
     sel+=`</select>`;
     const arb=(o.services||[]).filter(s=>s.min>0).map(s=>SERVICE[s.k]?.label.split(" ")[0].slice(0,4)).join(", ")||"–";
     const hJ=Math.round((o.services||[]).reduce((a,s)=>a+s.freq*s.min/60,0));
@@ -1023,9 +1124,9 @@ function renderPersonal(){
     <div class="box"><b>${chf(c.total)}</b><span>Total Personal/Jahr</span></div>`;
   $("#ratio").value=DATA.ratio; $("#social").value=DATA.social;
   // Bedarf je Equipe
-  const grp={tag:"Hauswart / Tagschicht",garten:"Gartenequipe",abend:"Abendreinigung"};
+  const grp={tag:"Hauswart / Tagschicht",garten:"Gartenequipe",abend:"Abendreinigung",spezial:"Spezialreinigung"};
   let nt=`<thead><tr><th>Equipe</th><th>Touren</th><th>Köpfe</th><th>FTE</th><th>Ø Auslastung</th></tr></thead><tbody>`;
-  ["tag","garten","abend"].forEach(eq=>{
+  EQUIPES.forEach(eq=>{
     const ts=DATA.tours.filter(t=>t.eq===eq);
     const heads=ts.reduce((a,t)=>a+t.persons,0);
     const fte=ts.reduce((a,t)=>a+t.persons*tourGrade(t)/100,0);
@@ -1036,7 +1137,7 @@ function renderPersonal(){
   $("#needTable").innerHTML=nt+"</tbody>";
   // Benchmark
   let wt=`<thead><tr><th>Rolle</th><th>Band</th><th>Default</th><th>Aktuell</th></tr></thead><tbody>`;
-  const roles={tag:"Hauswart / Tagschicht",garten:"Gärtner/in",abend:"Reinigung (Abend, GAV)",admin:"Backoffice / Verwaltung"};
+  const roles={tag:"Hauswart / Tagschicht",garten:"Gärtner/in",abend:"Reinigung (Abend, GAV)",spezial:"Spezialreinigung",admin:"Backoffice / Verwaltung"};
   Object.keys(roles).forEach(k=>{wt+=`<tr><td>${roles[k]}</td><td class="muted">${nf(WAGE_BANDS[k][0])}–${nf(WAGE_BANDS[k][1])}</td><td>${nf(WAGES_DEF[k])}</td><td><input type="number" data-wage="${k}" value="${DATA.wages[k]}" style="width:80px"></td></tr>`;});
   $("#wageTable").innerHTML=wt+"</tbody>";
   $$('#wageTable input').forEach(i=>i.onchange=()=>{DATA.wages[i.dataset.wage]=+i.value||0;persist();renderPersonal();});
@@ -1061,7 +1162,7 @@ function renderStaff(){
     const pct=(t&&soll)?ist/soll*100:0; if(t&&pct>105)warnOver=true;
     const cost=s.wageMt*s.bg/100*13*(1+social);costTot+=cost;fteTot+=s.bg/100;
     let opts=`<option value="" ${noTour?"selected":""}>— nicht eingeteilt —</option>`;
-    ["tag","garten","abend"].forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
+    EQUIPES.forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
     h+=`<tr${noTour?' style="background:rgba(240,147,43,.10)"':''}>
       <td><input type="text" data-f="name" data-i="${i}" value="${s.name}" style="width:120px">${noTour?' <span title="nicht eingeteilt" style="color:var(--warn)">⚠</span>':''}</td>
       <td><select data-f="tid" data-i="${i}">${opts}</select></td>
@@ -1141,10 +1242,18 @@ function printCalendar(tid,von,bis){
 /* ============ Excel Vorlagen & Import (SheetJS) ============ */
 function dl(wb,name){XLSX.writeFile(wb,name);}
 function tplObjekte(){
-  const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein","Unterhalt Freq/Jahr","Unterhalt Min","Hauswart Freq/Jahr","Hauswart Min","Grundr. Freq/Jahr","Grundr. Min","Winterdienst (ja/nein)","Bemerkungen"];
-  const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnliegenschaft","520","300","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","","52","40","12","30","4","90","ja",""];
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");dl(wb,"Vorlage_Objekte_Komplett.xlsx");
+  const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein",
+    "Unterhalt Freq/Jahr","Unterhalt Min","Unterhalt Equipe","Hauswart Freq/Jahr","Hauswart Min","Hauswart Equipe","Grundr. Freq/Jahr","Grundr. Min","Grundr. Equipe",
+    "Garten Freq/Jahr","Garten Min","Spezial Freq/Jahr","Spezial Min","Spezial Equipe","Winterdienst (ja/nein)","Winterdienst Equipe","Monatspauschale CHF","Pauschale statt Stunden (ja/nein)","Bemerkungen"];
+  const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnliegenschaft","520","300","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","",
+    "52","40","Hauswart","12","30","Hauswart","4","90","Spezial","16","70","6","120","Spezial","ja","Hauswart","0","nein",""];
+  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-Arbeit→Garten, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
+    ["Spezialreinigung = flexible Equipe: Grund-/Zwischen-/Spezialreinigungen + deckt Hauswart-Touren bei Ferien/Krankheit ab."],
+    ["Pauschale statt Stunden = ja → Umsatz dieses Objekts = Monatspauschale × 12 (statt Stunden × Ansatz)."]];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),"Hinweise");dl(wb,"Vorlage_Objekte_Komplett.xlsx");
 }
+function eqParse(v){const s=String(v||"").toLowerCase(); if(/spezial|sonder|zwischen/.test(s))return"spezial"; if(/garten|grün/.test(s))return"garten"; if(/abend/.test(s))return"abend"; if(/hauswart|tag/.test(s))return"tag"; return"";}
 function tplFerien(){
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Tour","KW von","KW bis","Person","Bemerkung"],["H01","28","31","1","Sommer"]]),"Ferien");dl(wb,"Vorlage_Ferien_Import.xlsx");
 }
@@ -1163,14 +1272,19 @@ function rowToObj(r){
   const services=[];
   const isBiz=/gewerbe|büro/i.test(g("Objekttyp"));
   const uf=+g("Unterhalt Freq/Jahr")||52, um=+g("Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
-  services.push({k:"ur",freq:uf,min:um,abend:isBiz});
-  services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60)});
-  services.push({k:"gr",freq:+g("Grundr. Freq/Jahr")||4,min:+g("Grundr. Min")||Math.round(clamp(areaIn/8,140,420))});
-  if(areaGa>0)services.push({k:"ga",freq:16,min:Math.round((areaGa*1.5+700)/16)});
-  const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45});
+  services.push({k:"ur",freq:uf,min:um,eq:eqParse(g("Unterhalt Equipe"))||(isBiz?"abend":"tag")});
+  services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60),eq:eqParse(g("Hauswart Equipe"))||"tag"});
+  services.push({k:"gr",freq:+g("Grundr. Freq/Jahr")||4,min:+g("Grundr. Min")||Math.round(clamp(areaIn/8,140,420)),eq:eqParse(g("Grundr. Equipe"))||"spezial"});
+  const gaF=+g("Garten Freq/Jahr")||0, gaM=+g("Garten Min")||0;
+  if(gaF>0&&gaM>0) services.push({k:"ga",freq:gaF,min:gaM,eq:"garten"});
+  else if(areaGa>0) services.push({k:"ga",freq:16,min:Math.round((areaGa*1.5+700)/16),eq:"garten"});
+  const spF=+g("Spezial Freq/Jahr")||0, spM=+g("Spezial Min")||0;
+  if(spF>0&&spM>0) services.push({k:"sp",freq:spF,min:spM,eq:eqParse(g("Spezial Equipe"))||"spezial"});
+  const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45,eq:eqParse(g("Winterdienst Equipe"))||"tag"});
   return {id:g("Objekt-ID","id")||("OBJ-"+Math.random().toString(36).slice(2,6)),
     street:g("Strasse")||"—",plz:g("PLZ")||"",ort:g("Ort")||"",lat:+lat.toFixed(4),lon:+lon.toFixed(4),
     type:g("Objekttyp")||"Wohnliegenschaft",areaIn,areaGa,winter:win,
+    pauschMt:+g("Monatspauschale CHF")||0, pauschOn:/ja|1|x|wahr/i.test(String(g("Pauschale statt Stunden (ja/nein)"))),
     kunde:g("Kunde")||"Kunde",contact:g("Ansprechperson")||"",email:g("E-Mail")||"",tel:g("Tel. allgemein")||g("Tel. direkt")||"",services};
 }
 // Equipe eines Objekts (objekt-basiert): Garten-Liegenschaft → garten, abend-Reinigung → abend, sonst Hauswart
@@ -1180,13 +1294,24 @@ function eqOf(o){
   if((o.services||[]).some(s=>s.k==="ur"&&s.abend)) return "abend";
   return "tag";
 }
+// Equipe EINER Arbeit/Dienstleistung (per-service). Explizit via s.eq, sonst sinnvoller Default.
+function serviceEq(o,s){
+  if(EQUIPES.includes(s.eq)) return s.eq;
+  if(s.k==="ga") return "garten";
+  if(s.k==="gr"||s.k==="sp") return "spezial";     // Grund-/Spezial-/Zwischenreinigung → Spezialequipe
+  if(s.k==="ur"&&s.abend) return "abend";
+  if(o&&o.cat==="buero") return "abend";
+  return "tag";
+}
+// Equipen, für die ein Objekt überhaupt Arbeit hat (kann mehrere sein)
+function objEquipes(o){ const set=new Set(); (o.services||[]).forEach(s=>{ if(s.min>0&&s.freq>0) set.add(serviceEq(o,s)); }); return [...set]; }
 // Touren aus DATA.objs komplett neu aufbauen: je Equipe auf möglichst wenige Touren zu 90–100% packen (C13).
 // Bestehende Tour-Einstellungen (Personen/Deckel/Fahrzeug/Briefing/Ferien) werden nach Reihenfolge übernommen.
 function rebuildTours(){
-  const prev={tag:[],garten:[],abend:[]}; DATA.tours.forEach(t=>{if(prev[t.eq])prev[t.eq].push(t);});
+  const prev={tag:[],garten:[],abend:[],spezial:[]}; DATA.tours.forEach(t=>{if(prev[t.eq])prev[t.eq].push(t);});
   const tours=[];
-  ["tag","garten","abend"].forEach(eq=>{
-    const group=DATA.objs.filter(o=>eqOf(o)===eq);
+  EQUIPES.forEach(eq=>{
+    const group=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0);
     const persons=prev[eq][0]?prev[eq][0].persons:PERS[eq];
     const caps=prev[eq].map(t=>t.maxUtil);
     packGroup(group,eq,persons,caps).forEach((bin,i)=>{const e=prev[eq][i];
@@ -1258,24 +1383,27 @@ function applyKunden(rows){
 }
 
 /* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
-const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt"],["win","Winterdienst"]];
+const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
 function openObjModal(id){
   const o=objById(id); if(!o)return;
-  const cur=DATA.tours.find(t=>t.objs.includes(id));
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
-  const rows=SVCLIST.map(([k,l])=>{const s=svc(k);
+  const eqOpt=(sel)=>EQUIPES.map(e=>`<option value="${e}" ${sel===e?"selected":""}>${EQ[e].label.split(' ')[0]}</option>`).join("");
+  const rows=SVCLIST.map(([k,l])=>{const s=svc(k); const seq=serviceEq(o,{k,eq:s.eq,abend:s.abend});
     return `<tr><td><span class="clbl" style="background:${SERVICE[k].col}"></span>${l}</td>
-      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:70px"></td>
-      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:80px"></td></tr>`;}).join("");
-  let topts="";["tag","garten","abend"].forEach(e=>{topts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+"</optgroup>";});
+      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:64px"></td>
+      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:70px"></td>
+      <td class="n"><select id="m_eq_${k}" style="width:92px">${eqOpt(seq)}</select></td></tr>`;}).join("");
   $("#objModalBox").innerHTML=`
     <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${o.id} · ${o.street}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
     <div class="muted" style="font-size:12px">${o.plz} ${o.ort} · ${o.kunde} · ${o.type}</div>
-    <div class="toolbar"><label class="chk">Tour <select id="m_tour">${topts}</select></label>
+    <div class="toolbar">
       <label class="chk">Fläche m² <input type="number" id="m_areaIn" value="${o.areaIn||0}" style="width:80px"></label>
       <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label></div>
-    <table><thead><tr><th>Arbeit</th><th class="n">Frequenz/Jahr</th><th class="n">Dauer (min)</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:6px">Frequenz = Einsätze pro Jahr (wöchentlich 52 · monatlich 12 · quartalsweise 4). Dauer 0 = Leistung entfällt.</div>
+    <table><thead><tr><th>Arbeit</th><th class="n">Frequenz/Jahr</th><th class="n">Dauer (min)</th><th class="n">Equipe</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:6px">Frequenz = Einsätze pro Jahr (wöchentlich 52 · monatlich 12 · quartalsweise 4). Dauer 0 = Leistung entfällt. Equipe je Arbeit frei wählbar.</div>
+    <div class="toolbar" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+      <label class="chk">Monatspauschale CHF <input type="number" id="m_pausch" value="${o.pauschMt||0}" min="0" style="width:100px"></label>
+      <label class="chk"><input type="checkbox" id="m_pauschOn" ${o.pauschOn?"checked":""}> Umsatz = Pauschale (statt Stunden × Ansatz)</label></div>
     <div class="toolbar" style="justify-content:flex-end"><button class="sm" id="objModalCancel">Abbrechen</button><button class="sm primary" id="objModalSave">Speichern</button></div>`;
   $("#objModal").classList.add("on");
   $("#objModalClose").onclick=closeObjModal; $("#objModalCancel").onclick=closeObjModal;
@@ -1284,21 +1412,23 @@ function openObjModal(id){
 function closeObjModal(){$("#objModal").classList.remove("on");}
 function saveObjModal(id){
   const o=objById(id); if(!o)return;
+  const before=new Set(objEquipes(o));
   o.areaIn=+$("#m_areaIn").value||o.areaIn; o.areaGa=+$("#m_areaGa").value||0;
-  const abendPrev=(o.services.find(s=>s.k==="ur")||{}).abend||false;
+  o.pauschMt=+$("#m_pausch").value||0; o.pauschOn=$("#m_pauschOn").checked;
   o.services=[];
-  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0;
-    if(freq>0&&min>0){const s={k,freq,min}; if(k==="ur")s.abend=abendPrev; o.services.push(s);}});
+  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0, eq=$("#m_eq_"+k).value;
+    if(freq>0&&min>0){ o.services.push({k,freq,min,eq}); }});   // Equipe je Arbeit explizit
   o.winter=o.services.some(s=>s.k==="win");
-  const newTid=$("#m_tour").value; const cur=DATA.tours.find(t=>t.objs.includes(id));
   closeObjModal();
-  if(!cur||cur.id!==newTid){ moveObj(id,newTid); }        // moveObj persistiert + rendert
-  else { persist(); renderView(curView); }
+  // Betroffene Equipen (alt ∪ neu) neu packen → Objekt landet in den richtigen Touren
+  const affected=new Set([...before,...objEquipes(o)]);
+  affected.forEach(eq=>packEquipe(eq));
+  ensureCurTour(); persist(); renderAll();
   flash("Objekt "+o.id+" aktualisiert");
 }
 
 /* ============ Persistenz: localStorage + GitHub ============ */
-function persist(){try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
+function persist(){invalidateSchedule();try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
   try{window.parent&&window.parent!==window&&window.parent.postMessage({wsgDataChanged:1},"*");}catch(e){}}
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
 function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
@@ -1315,7 +1445,8 @@ function normalizePlan(d){
     t.ferienKW = Array.isArray(t.ferienKW) ? t.ferienKW : [];
     if(typeof t.persons!=="number") t.persons = PERS[t.eq]||1;
     if(typeof t.maxUtil!=="number") t.maxUtil = defaultMaxUtil(t.eq);
-    {const [lo,hi]=maxUtilRange(t.eq); t.maxUtil=clamp(t.maxUtil,lo,hi);}  // auf physische Hürde klemmen (migriert alte Abend-100 → ~56)
+    {const oldDef=Math.round(targetUtil(t.eq)); if(t.maxUtil===oldDef) t.maxUtil=defaultMaxUtil(t.eq);}  // alten 100%-Standard auf neuen 90%-Standard heben
+    {const [lo,hi]=maxUtilRange(t.eq); t.maxUtil=clamp(t.maxUtil,lo,hi);}  // auf physische Hürde klemmen
     if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend");
     if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend");
     if(!t.id) t.id = EQ[t.eq].short+"?";
@@ -1400,13 +1531,13 @@ function setView(v){
   if(!updateEmpty()) renderView(v);
 }
 function renderView(v){
-  if(v==="tourplan"){renderPlanKpi();renderTourGrid();renderMap();renderDetail();fillTourSelect();}
+  if(v==="tourplan"){renderPlanKpi();renderPlanTips();renderTourGrid();renderMap();renderDetail();fillTourSelect();}
   else if(v==="objekte")renderObjekte();
   else if(v==="ferien")renderFerien();
   else if(v==="kunden")renderKunden();
   else if(v==="personal")renderPersonal();
 }
-function renderAll(){fillTourSelect();if(!updateEmpty())renderView(curView);}
+function renderAll(){invalidateSchedule();fillTourSelect();if(!updateEmpty())renderView(curView);}
 function downloadDemo(){const demo=buildDefault();const b=new Blob([JSON.stringify(demo,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="WSG_plan_override.json";a.click();
   flash("WSG_plan_override.json heruntergeladen – ins private Repo unter data/ legen");}
