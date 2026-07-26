@@ -387,7 +387,7 @@ function renderUebersicht(){
 function overviewSummary(){
   const ops=readTourPlan();
   if(!ops) return `<span class="muted">Noch kein Tourenplan geladen. Öffne den Reiter <b>Tourenplan</b> und lade/erstelle einen Plan.</span>`;
-  const c=ops.calc||{}; const EQN={tag:"Hauswart",garten:"Garten",spezial:"Spezial",abend:"Abend"};
+  const c=ops.calc||{}; const EQN={tag:"Hauswart",garten:"Garten",spezial:"Spezial",morgen:"Morgen",abend:"Abend"};
   const sec=(title,inner)=>`<div class="ovsec"><h4>${title} <span class="ln"></span></h4>${inner}</div>`;
   let html="";
   html+=sec("Betrieb · Tourenplan",`<div class="ovgrid">
@@ -397,7 +397,7 @@ function overviewSummary(){
     <div class="ovtile"><b>${ops.vehicles}</b><span>Fahrzeuge</span></div>
     <div class="ovtile"><b>${c.kunden!=null?c.kunden:'–'}</b><span>Kunden</span></div></div>`);
   if(c.byEq) html+=sec("Ø-Auslastung je Equipe",`<div class="ovgrid">`+
-    ['tag','garten','spezial','abend'].filter(eq=>c.byEq[eq]).map(eq=>{const e=c.byEq[eq];
+    ['tag','garten','spezial','morgen','abend'].filter(eq=>c.byEq[eq]).map(eq=>{const e=c.byEq[eq];
       const cls=e.avgUtil>105?'bad':e.avgUtil>=70?'good':'warnc';
       return `<div class="ovtile ${cls}"><b>${e.avgUtil}%</b><span>${EQN[eq]||eq} · ${e.tours} Tour(en)</span></div>`;}).join("")+`</div>`);
   html+=sec("Personal",`<div class="ovgrid">
@@ -442,7 +442,7 @@ function readTourPlan(){
     const bh={ur:0,th:0,gr:0,ga:0,win:0}; let pausch=0;
     d.objs.forEach(o=>{
       if(o.pauschOn){ pausch+=(+o.pauschMt||0)*12; return; }   // Pauschale statt Stunden → keine verrechenbaren Stunden
-      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':(['gf','gs','gh','rm'].includes(sv.k)?'ga':sv.k); if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialr.→Grund; Garten-Saisons+Rasen/Turnus→Garten
+      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':(['gf','gs','gh','rm'].includes(sv.k)?'ga':(['ura','urm'].includes(sv.k)?'ur':sv.k)); if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialr.→Grund; Garten-Saisons+Rasen/Turnus→Garten; UR Abend/Morgen→UR
     });
     const fieldHeads=(d.tours||[]).reduce((a,t)=>a+(t.persons||0),0);
     // EINHEITLICHE P&L: wenn die Tourenplanung ihren echten Kostenschnappschuss (d.calc, auf Ist-Auslastung) mitliefert → diesen nutzen.
@@ -453,7 +453,7 @@ function readTourPlan(){
         soc, billable:bh, pausch, calc:d.calc};
     }
     // Fallback (Alt-Daten ohne Schnappschuss): grobe FTE/Personalkosten je Equipe über feste Faktoren
-    const GR={tag:0.85,garten:0.50,abend:0.45,spezial:0.70};
+    const GR={tag:0.85,garten:0.50,abend:0.45,spezial:0.70,morgen:0.45};
     let fte=0,personal=0;
     (d.tours||[]).forEach(t=>{const grade=GR[t.eq]||0.7; fte+=t.persons*grade;
       personal+=(d.wages?.[t.eq]||5000)*t.persons*grade*13*soc;});

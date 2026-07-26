@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com https://api3.geo.admin.ch; frame-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
-<title>WSG Tourenplanung</title>
+<title>Maintain Tourenplanung</title>
 <style>
 :root{
   --bg:#0f1720; --panel:#16212e; --panel2:#1c2a3a; --line:#26384c; --ink:#e8eef5; --mut:#8ea3ba;
   --acc:#3ea6ff; --ok:#38c172; --warn:#f0932b; --bad:#e74c3c; --tag:#243447;
-  --tag-tag:#2d5a8a; --tag-garten:#2f7d4f; --tag-abend:#7a4fae; --tag-spezial:#a86a2d; --tag-ab:#8a5a2d;
+  --tag-tag:#2d5a8a; --tag-garten:#2f7d4f; --tag-abend:#7a4fae; --tag-spezial:#a86a2d; --tag-ab:#8a5a2d; --tag-morgen:#2f6f7d;
   --radius:12px; --sh:0 1px 2px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
@@ -39,6 +39,7 @@ a{color:var(--acc)}
 .pill.garten{background:var(--tag-garten);color:#dcf5e6}
 .pill.abend{background:var(--tag-abend);color:#efe1ff}
 .pill.spezial{background:var(--tag-spezial);color:#ffe9d1}
+.pill.morgen{background:var(--tag-morgen);color:#d7f0f5}
 .pill.ab{background:var(--tag-ab);color:#ffe9d1}
 table{border-collapse:collapse;width:100%}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;font-size:13px}
@@ -158,6 +159,7 @@ tr:hover td{background:var(--panel2)}
         <button class="sm" data-add="tag">＋ Hauswart</button>
         <button class="sm" data-add="garten">＋ Garten</button>
         <button class="sm" data-add="spezial">＋ Spezial</button>
+        <button class="sm" data-add="morgen">＋ Morgen</button>
         <button class="sm" data-add="abend">＋ Abend</button>
       </div>
       <div id="tourGrid" style="margin-top:10px"></div>
@@ -295,7 +297,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26x</b></div>
+<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-26y</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -316,11 +318,11 @@ const chf=n=>"CHF "+nf(Math.round(n));
 
 /* ---- Konstanten (Regelwerk C1–C13) ---- */
 const HOME={lat:47.451,lon:8.585,name:"Kloten"};   // Hauptsitz
-const EQUIPES=["tag","garten","spezial","abend"];   // Reihenfolge: Hauswart · Garten · Spezial · Abend (spezial = Grund-/Zwischenreinigung + Notfall-/Überlastabdeckung)
-const MAXMIN={tag:2520,garten:5040,abend:1350,spezial:2520};    // Kapazität min/Woche je Tour (voll besetzt)
-const PERS={tag:1,garten:1,abend:1,spezial:1};               // Default Personen/Tour (Garten kann auf 2 gestellt werden)
-const MAXOBJ={tag:14,garten:22,abend:12,spezial:34};           // max. Objekte je Tour (Spezial: viele Objekte, tiefe Frequenz)
-const PERPERSON={tag:2520,garten:2520,abend:1350,spezial:2520};  // Kapazität min/Woche je Person
+const EQUIPES=["tag","garten","spezial","abend","morgen"];   // Hauswart · Garten · Spezial · Abend · Morgen (Abend/Morgen = reine Unterhaltsreinigung Büro/Werkstatt; spezial = Grund-/Zwischenreinigung + Notfall-/Überlastabdeckung)
+const MAXMIN={tag:2520,garten:5040,abend:1350,spezial:2520,morgen:1350};    // Kapazität min/Woche je Tour (voll besetzt)
+const PERS={tag:1,garten:1,abend:1,spezial:1,morgen:1};               // Default Personen/Tour (Garten kann auf 2 gestellt werden)
+const MAXOBJ={tag:14,garten:22,abend:12,spezial:34,morgen:12};           // max. Objekte je Tour (Spezial: viele Objekte, tiefe Frequenz)
+const PERPERSON={tag:2520,garten:2520,abend:1350,spezial:2520,morgen:1350};  // Kapazität min/Woche je Person
 const PACK_FACTOR=0.90;                             // Arbeitsanteil je Tour (Rest ~10% = Fahrzeit) → Ziel-Auslastung 90–100%
 const WEEKMIN=2520;                                 // 42 h = 100 % je Person
 const JUMP_MIN=22;                                  // Weg-Sprung (min) ab dem eine Tour geografisch „reisst" → neue Tour (A)
@@ -330,19 +332,20 @@ const DAYTARGET=504;                                // Norm 8h24 je Werktag (min
 const OT_MAX=60;                                    // max. 1h Überzeit/Tag (nur wenn nötig; sonst 0)
 const BRIEF_EDGE=1.0;                               // Briefing „nah" am Start/Feierabend = innerhalb 1h → keine Arbeit auf der äusseren Seite
 const SOCIAL_DEF=20, FZKOST_DEF=8000;
-const WAGES_DEF={tag:5700,garten:5300,abend:4500,spezial:5200,admin:6300};
+const WAGES_DEF={tag:5700,garten:5300,abend:4500,spezial:5200,morgen:4500,admin:6300};
 // Globale Verrechnungs-Ansätze CHF/h je Arbeit (Umsatz = Stunden × Ansatz, wenn KEINE Pauschale). Pro Objekt übersteuerbar (s.rate).
-const RATES_DEF={ur:52,th:85,gr:65,ga:88,gf:88,gs:88,gh:88,rm:78,win:100,sp:65};
+const RATES_DEF={ur:52,ura:52,urm:52,th:85,gr:65,ga:88,gf:88,gs:88,gh:88,rm:78,win:100,sp:65};
 // Turnus je Arbeit → Einsätze/Jahr (steuert das Frequenz-Feld im Objekt-Modal)
 const TURNUS=[["woche",52,"wöchentlich"],["2woche",26,"14-täglich"],["monat",12,"monatlich"],["2monat",6,"2-monatlich"],["quartal",4,"quartalsweise"],["halb",2,"halbjährlich"],["jahr",1,"jährlich"],["bedarf",0,"nach Bedarf"]];
 function freqToTurnus(f){const m=TURNUS.find(t=>t[1]===+f);return m?m[0]:"indiv";}
 function rateOf(s){ return (+s.rate>0)?+s.rate:((DATA.rates&&DATA.rates[s.k])||RATES_DEF[s.k]||0); }
-const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],admin:[5500,7200]};
+const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],morgen:[4000,4900],admin:[5500,7200]};
 const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],work:[7.5,17]},
           garten:{label:"Gartenequipe",short:"G",cls:"garten",win:[7.5,21],work:[7.5,17]},
           abend:{label:"Abendreinigung",short:"A",cls:"abend",win:[17,21.5],work:[17,21.5]},
-          spezial:{label:"Spezialreinigung",short:"S",cls:"spezial",win:[7.5,21],work:[7.5,17]}};
-const SERVICE={ur:{label:"Unterhaltsreinigung",col:"#4aa3ff"},th:{label:"Techn. Hauswart",col:"#38c172"},
+          spezial:{label:"Spezialreinigung",short:"S",cls:"spezial",win:[7.5,21],work:[7.5,17]},
+          morgen:{label:"Morgenreinigung",short:"M",cls:"morgen",win:[6,10.5],work:[6,10.5]}};   // ab 06:00 (früher = Nachtzuschlag)
+const SERVICE={ur:{label:"UR Tour (Hauswart)",col:"#4aa3ff"},ura:{label:"UR Abend",col:"#6a5acd"},urm:{label:"UR Morgen",col:"#2fb6c9"},th:{label:"Techn. Hauswart",col:"#38c172"},
                gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt (allg.)",col:"#5fbf6b"},
                gf:{label:"Garten Frühling",col:"#8fd14f"},gs:{label:"Garten Sommer",col:"#39a845"},gh:{label:"Garten Herbst",col:"#d98b30"},
                rm:{label:"Rasen/Turnus (Hauswart)",col:"#7bbf3a"},
@@ -475,7 +478,7 @@ function buildDefault(){
     const group=objs.filter(o=>weeklyAvgMin(o,eq)>0);
     packGroup(group,eq,PERS[eq]).forEach((bin,i)=>tours.push({
       id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),
-      vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin.map(o=>o.id),ferienKW:[]}));
+      vehicle:eq!=="abend"&&eq!=="morgen",briefing:eq!=="abend"&&eq!=="morgen",objs:bin.map(o=>o.id),ferienKW:[]}));
   });
   return {objs,tours,wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,
     briefing:{...BRIEF},staff:null,ratio:10};
@@ -603,7 +606,7 @@ function computeCoverage(kw){
     // Abdeckungs-Reihenfolge je Equipe: ZUERST eigene Equipe (solange sie es tragen kann),
     // Spezial erst wenn die eigene Auslastung zu hoch ist; Garten nur als NOTFALL für Hauswart.
     // Spezial deckt KEINE Gartenarbeit ab (garten → nur garten).
-    const COVER={ tag:["tag","spezial","garten"], abend:["abend","spezial"], garten:["garten"], spezial:["spezial","tag"] };
+    const COVER={ tag:["tag","spezial","garten"], abend:["abend","spezial"], morgen:["morgen","spezial"], garten:["garten"], spezial:["spezial","tag"] };
     const chain=COVER[t.eq]||[t.eq];
     const freeOf=p=>{const perCap=PERPERSON[p.eq]*45/42; const load=(tourWorkMin(p,kw)+tourDriveMin(p,kw)+res[p.id].extra)/res[p.id].avail; return perCap-load;};
     for(const sp of spill.sort((a,b)=>b.need-a.need)){
@@ -673,7 +676,7 @@ function planSummary(){
   const understaffed=DATA.tours.filter(t=>staff.filter(s=>s.tid===t.id).length<t.persons).length;
   const kunden=new Set(DATA.objs.map(o=>o.kunde)).size;
   // Umsatz je Kategorie: Pauschale-Objekte → Pauschale×12; sonst je Arbeit Jahresstunden × (Objekt-Satz ?? globaler Ansatz)
-  const REVCAT={ur:"ur",th:"th",gr:"gr",sp:"gr",ga:"garten",gf:"garten",gs:"garten",gh:"garten",rm:"garten",win:"winter"};
+  const REVCAT={ur:"ur",ura:"ur",urm:"ur",th:"th",gr:"gr",sp:"gr",ga:"garten",gf:"garten",gs:"garten",gh:"garten",rm:"garten",win:"winter"};
   const rev={ur:0,th:0,gr:0,garten:0,winter:0,pausch:0};
   DATA.objs.forEach(o=>{
     if(o.pauschOn){ rev.pausch += (+o.pauschMt||0)*12; return; }
@@ -738,7 +741,7 @@ function buildWeek(t,kw,cov){
   workDays.forEach((d,i)=>{
     const briefToday = t.briefing && d===briefDay && !holiDays.has(briefDay);
     let dayStart=ws, dayEnd=we+OT_MAX/60;              // Überzeit verlängert das Tagesende
-    const breaks=[]; if(t.eq!=="abend") breaks.push([12,13]);
+    const breaks=[]; if(t.eq!=="abend"&&t.eq!=="morgen") breaks.push([12,13]);
     if(briefToday){
       const nearStart = bs <= ws + BRIEF_EDGE;         // Briefing nah am Arbeitsstart
       const nearEnd   = be >= we - BRIEF_EDGE;         // Briefing nah am Feierabend
@@ -839,7 +842,7 @@ function buildTourCard(t){
 function renderTourGrid(){
   if(!Array.isArray(DATA.staff)){DATA.staff=fictitiousStaffList();persist();}  // fiktive MA je Slot, damit Touren besetzt starten
   const box=$("#tourGrid"); box.innerHTML="";
-  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["spezial","✨ Spezialreinigung"],["abend","🌙 Abendreinigung"]];
+  const groups=[["tag","🏠 Hauswart / Tagschicht"],["garten","🌿 Gartenequipe"],["spezial","✨ Spezialreinigung"],["morgen","🌅 Morgenreinigung"],["abend","🌙 Abendreinigung"]];
   groups.forEach(([eq,label])=>{
     const ts=DATA.tours.filter(t=>t.eq===eq); if(!ts.length) return;
     const avg=Math.round(ts.reduce((a,t)=>a+tourYear(t).avg,0)/ts.length);
@@ -945,8 +948,8 @@ function packEquipe(eq, shrink){
   const rebuilt=[];
   for(let i=0;i<count;i++){ const e=existing[i], bin=bins[i]||[];
     rebuilt.push({id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
-      maxUtil:e?e.maxUtil:defaultMaxUtil(eq), vehicle:e?e.vehicle:(eq!=="abend"),
-      briefing:e?e.briefing:(eq!=="abend"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)}); }
+      maxUtil:e?e.maxUtil:defaultMaxUtil(eq), vehicle:e?e.vehicle:(eq!=="abend"&&eq!=="morgen"),
+      briefing:e?e.briefing:(eq!=="abend"&&eq!=="morgen"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)}); }
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
 }
@@ -982,7 +985,7 @@ function fillExistingTours(eq){
   });
   reorderTours();
 }
-function reorderTours(){const rank={tag:0,garten:1,spezial:2,abend:3};
+function reorderTours(){const rank={tag:0,garten:1,spezial:2,morgen:3,abend:4};
   DATA.tours.sort((a,b)=>(rank[a.eq]-rank[b.eq])||a.id.localeCompare(b.id));}
 function ensureCurTour(){ if(!DATA.tours.find(t=>t.id===curTour)) curTour=DATA.tours[0]?.id; }
 function redistributeCrew(eq){ fillExistingTours(eq); }       // Personal-/Ziel-Änderung → in vorhandene Touren neu einfüllen (Anzahl bleibt)
@@ -995,7 +998,7 @@ function optimizeAll(){
 function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))return;
   DATA.tours=DATA.tours.filter(t=>t.id!==id);if(curTour===id)curTour=DATA.tours[0]?.id;persist();renderAll();}
 function addTour(eq){let n=1;while(DATA.tours.find(t=>t.id===EQ[eq].short+String(n).padStart(2,"0")))n++;
-  DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),vehicle:eq!=="abend",briefing:eq!=="abend",objs:[],ferienKW:[]});persist();renderAll();}
+  DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),vehicle:eq!=="abend"&&eq!=="morgen",briefing:eq!=="abend"&&eq!=="morgen",objs:[],ferienKW:[]});persist();renderAll();}
 function moveObj(objId,toTour){const to=DATA.tours.find(t=>t.id===toTour);if(!to)return;
   const from=DATA.tours.find(t=>t.eq===to.eq&&t.objs.includes(objId));   // nur innerhalb DERSELBEN Equipe umhängen
   if(from&&from.id===to.id)return;
@@ -1006,7 +1009,7 @@ function moveObj(objId,toTour){const to=DATA.tours.find(t=>t.id===toTour);if(!to
 /* ============ Tour-Auswahl ============ */
 function fillTourSelect(){
   const sel=$("#tourSelect");sel.innerHTML="";
-  const groups={tag:"Hauswart",garten:"Garten",abend:"Abend",spezial:"Spezial"};
+  const groups={tag:"Hauswart",garten:"Garten",abend:"Abend",spezial:"Spezial",morgen:"Morgen"};
   EQUIPES.forEach(eq=>{
     const g=document.createElement("optgroup");g.label=groups[eq];
     DATA.tours.filter(t=>t.eq===eq).forEach(t=>{const o=document.createElement("option");o.value=t.id;o.textContent=t.id+" · "+t.objs.length+" Obj";g.appendChild(o);});
@@ -1104,7 +1107,7 @@ function renderDetail(){
 }
 function renderCalendar(t,wk){
   const box=$("#calendar");
-  const eqw=EQ[t.eq]; const H=560, top=6, [ax0,ax1]=[6,23];
+  const eqw=EQ[t.eq]; const H=560, top=6, [ax0,ax1]=[5,23];
   const y=h=>top+(h-ax0)/(ax1-ax0)*H;
   if(wk.blocked){
     box.innerHTML=`<div class="card" style="text-align:center;padding:30px">
@@ -1122,8 +1125,8 @@ function renderCalendar(t,wk){
     let inner="";
     // Normlinien
     if(!isHoli){
-      eqw.work.forEach((h,i)=>{const yy=y(h);inner+=`<div class="normline" style="top:${yy}px"><span>${i===0?(t.eq==='abend'?'17:00':'07:30'):(t.eq==='abend'?'21:30':'16:54')}</span></div>`;});
-      if(t.eq!=="abend"){const yy=y(16.9);inner+=`<div class="normline" style="top:${yy}px"></div>`;}
+      eqw.work.forEach((h,i)=>{const yy=y(h);inner+=`<div class="normline" style="top:${yy}px"><span>${_hm(h)}</span></div>`;});
+      if(t.eq!=="abend"&&t.eq!=="morgen"){const yy=y(16.9);inner+=`<div class="normline" style="top:${yy}px"></div>`;}
     }
     if(isHoli){
       const hn=HOLIDAYS.find(h=>h.kw===curKW&&h.d===d+1);
@@ -1273,7 +1276,7 @@ function renderPersonal(){
     <div class="box"><b>${chf(c.total)}</b><span>Total Personal/Jahr</span></div>`;
   $("#ratio").value=DATA.ratio; $("#social").value=DATA.social;
   // Bedarf je Equipe
-  const grp={tag:"Hauswart / Tagschicht",garten:"Gartenequipe",abend:"Abendreinigung",spezial:"Spezialreinigung"};
+  const grp={tag:"Hauswart / Tagschicht",garten:"Gartenequipe",abend:"Abendreinigung",spezial:"Spezialreinigung",morgen:"Morgenreinigung"};
   let nt=`<thead><tr><th>Equipe</th><th>Touren</th><th>Köpfe</th><th>FTE</th><th>Ø Auslastung</th></tr></thead><tbody>`;
   EQUIPES.forEach(eq=>{
     const ts=DATA.tours.filter(t=>t.eq===eq);
@@ -1286,7 +1289,7 @@ function renderPersonal(){
   $("#needTable").innerHTML=nt+"</tbody>";
   // Benchmark
   let wt=`<thead><tr><th>Rolle</th><th>Band</th><th>Default</th><th>Aktuell</th></tr></thead><tbody>`;
-  const roles={tag:"Hauswart / Tagschicht",garten:"Gärtner/in",abend:"Reinigung (Abend, GAV)",spezial:"Spezialreinigung",admin:"Backoffice / Verwaltung"};
+  const roles={tag:"Hauswart / Tagschicht",garten:"Gärtner/in",abend:"Reinigung (Abend, GAV)",morgen:"Reinigung (Morgen, GAV)",spezial:"Spezialreinigung",admin:"Backoffice / Verwaltung"};
   Object.keys(roles).forEach(k=>{wt+=`<tr><td>${roles[k]}</td><td class="muted">${nf(WAGE_BANDS[k][0])}–${nf(WAGE_BANDS[k][1])}</td><td>${nf(WAGES_DEF[k])}</td><td><input type="number" data-wage="${k}" value="${DATA.wages[k]}" style="width:80px"></td></tr>`;});
   $("#wageTable").innerHTML=wt+"</tbody>";
   $$('#wageTable input').forEach(i=>i.onchange=()=>{DATA.wages[i.dataset.wage]=+i.value||0;persist();renderPersonal();});
@@ -1441,19 +1444,20 @@ function printAllTours(von,bis){
 function dl(wb,name){XLSX.writeFile(wb,name);}
 function tplObjekte(){
   const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein",
-    "Unterhalt Freq/Jahr","Unterhalt Min","Unterhalt Equipe","Hauswart Freq/Jahr","Hauswart Min","Hauswart Equipe","Grundr. Freq/Jahr","Grundr. Min","Grundr. Equipe",
+    "UR Tour Freq/Jahr","UR Tour Min","UR Tour Equipe","UR Abend Freq/Jahr","UR Abend Min","UR Morgen Freq/Jahr","UR Morgen Min","Hauswart Freq/Jahr","Hauswart Min","Hauswart Equipe","Grundr. Freq/Jahr","Grundr. Min","Grundr. Equipe",
     "Garten allg. Freq/Jahr","Garten allg. Min","Frühling Freq/Jahr","Frühling Min","Sommer Freq/Jahr","Sommer Min","Herbst Freq/Jahr","Herbst Min","Rasen/Turnus Freq/Jahr","Rasen/Turnus Min",
     "Spezial Freq/Jahr","Spezial Min","Spezial Equipe","Winterdienst (ja/nein)","Winterdienst Equipe","Monatspauschale CHF","Pauschale statt Stunden (ja/nein)","Bemerkungen"];
   const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnüberbauung mit Umschwung","520","900","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","",
-    "52","40","Garten","12","30","Garten","4","90","Spezial","0","0","5","60","6","55","6","70","20","40","0","0","Spezial","ja","Garten","0","nein",""];
-  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-/Saisonarbeit→Garten, Rasen/Turnus→Hauswart, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
+    "52","40","","0","0","0","0","12","30","Garten","4","90","Spezial","0","0","5","60","6","55","6","70","20","40","0","0","Spezial","ja","Garten","0","nein",""];
+  const info=[["Unterhaltsreinigung 3-geteilt: UR Tour = Treppenhaus/Korridore/Geländer/Fenster auf Hauswart-Touren · UR Abend & UR Morgen = reine Reinigung Büro/Werkstatt (eigene Abend-/Morgen-Equipen). Nur Freq+Min eintragen, Equipe ist fix."],
+    ["Equipe je Arbeit: Hauswart | Garten | Abend | Morgen | Spezial (leer = automatisch: UR Tour→Hauswart, Garten-/Saisonarbeit→Garten, Rasen/Turnus→Hauswart, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
     ["Garten-Saisons: Frühling KW10–21 · Sommer KW22–35 · Herbst KW36–47 · Winterdienst KW48–9. Rasen/Turnus (1–2-Wochen-Mähen) läuft Mrz–Nov und geht an den Hauswart. Alles automatisch in Saison gelegt + geglättet."],
     ["Spezialreinigung = flexible Equipe: Grund-/Zwischen-/Spezialreinigungen + deckt Hauswart-/Abend-Touren bei Ferien/Krankheit ab (kein Garten)."],
     ["Pauschale statt Stunden = ja → Umsatz dieses Objekts = Monatspauschale × 12 (statt Stunden × Ansatz)."]];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),"Hinweise");dl(wb,"Vorlage_Objekte_Komplett.xlsx");
 }
-function eqParse(v){const s=String(v||"").toLowerCase(); if(/spezial|sonder|zwischen/.test(s))return"spezial"; if(/garten|grün/.test(s))return"garten"; if(/abend/.test(s))return"abend"; if(/hauswart|tag/.test(s))return"tag"; return"";}
+function eqParse(v){const s=String(v||"").toLowerCase(); if(/spezial|sonder|zwischen/.test(s))return"spezial"; if(/garten|grün/.test(s))return"garten"; if(/morgen/.test(s))return"morgen"; if(/abend/.test(s))return"abend"; if(/hauswart|tag/.test(s))return"tag"; return"";}
 function tplFerien(){
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Tour","KW von","KW bis","Person","Bemerkung"],["H01","28","31","1","Sommer"]]),"Ferien");dl(wb,"Vorlage_Ferien_Import.xlsx");
 }
@@ -1471,8 +1475,10 @@ function rowToObj(r){
   if(!lat||!lon){const c=plzCentroid(g("PLZ"));lat=c.lat;lon=c.lon;needGeo=true;}
   const services=[];
   const isBiz=/gewerbe|büro/i.test(g("Objekttyp"));
-  const uf=+g("Unterhalt Freq/Jahr")||52, um=+g("Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
-  services.push({k:"ur",freq:uf,min:um,eq:eqParse(g("Unterhalt Equipe"))||(isBiz?"abend":undefined)});   // leer → serviceEq nach Objekttyp
+  const uf=+g("UR Tour Freq/Jahr","Unterhalt Freq/Jahr")||52, um=+g("UR Tour Min","Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
+  services.push({k:"ur",freq:uf,min:um,eq:eqParse(g("UR Tour Equipe","Unterhalt Equipe"))||undefined});   // UR Tour (Treppenhaus/Korridore/Geländer/Fenster) → Hauswart
+  const uaf=+g("UR Abend Freq/Jahr")||0, uam=+g("UR Abend Min")||0;   if(uaf>0&&uam>0) services.push({k:"ura",freq:uaf,min:uam,eq:"abend"});    // reine UR Büro/Werkstatt am Abend
+  const umf=+g("UR Morgen Freq/Jahr")||0, umm=+g("UR Morgen Min")||0;  if(umf>0&&umm>0) services.push({k:"urm",freq:umf,min:umm,eq:"morgen"});  // reine UR Büro/Werkstatt am Morgen
   services.push({k:"th",freq:+g("Hauswart Freq/Jahr")||(isBiz?12:52),min:+g("Hauswart Min")||Math.round(45+areaIn/60),eq:eqParse(g("Hauswart Equipe"))||undefined});
   services.push({k:"gr",freq:+g("Grundr. Freq/Jahr")||4,min:+g("Grundr. Min")||Math.round(clamp(areaIn/8,140,420)),eq:eqParse(g("Grundr. Equipe"))||"spezial"});
   const gaF=+g("Garten allg. Freq/Jahr","Garten Freq/Jahr")||0, gaM=+g("Garten allg. Min","Garten Min")||0;
@@ -1509,15 +1515,18 @@ function serviceEq(o,s){
   if(["ga","gf","gs","gh"].includes(s.k)) return "garten";   // übrige Garten-/Saisonarbeit → Gärtner
   if(s.k==="win") return "garten";                  // Winterdienst → Gärtner (Winter-Saisonarbeit der Gartenequipe)
   if(s.k==="gr"||s.k==="sp") return "spezial";      // Grund-/Spezial-/Zwischenreinigung → Spezialequipe
-  if(s.k==="ur"&&s.abend) return "abend";           // Abend-Unterhaltsreinigung
-  return eqOf(o);                                    // UR / Techn. Hauswart → Basis-Equipe des OBJEKTS (Garten-Liegenschaft→Gärtner, Büro→Abend, sonst Hauswart)
+  if(s.k==="ura") return "abend";                    // UR Abend → Abendreinigung (Büro/Werkstatt)
+  if(s.k==="urm") return "morgen";                   // UR Morgen → Morgenreinigung (Büro/Werkstatt)
+  if(s.k==="ur"&&s.abend) return "abend";           // Alt-Import: Abend-Flag am UR
+  if(s.k==="ur") return "tag";                       // UR Tour (Treppenhaus/Korridore/Geländer/Fenster) → Hauswart-Tour
+  return eqOf(o);                                    // Techn. Hauswart → Basis-Equipe des OBJEKTS
 }
 // Equipen, für die ein Objekt überhaupt Arbeit hat (kann mehrere sein)
 function objEquipes(o){ const set=new Set(); (o.services||[]).forEach(s=>{ if(s.min>0&&s.freq>0) set.add(serviceEq(o,s)); }); return [...set]; }
 // Touren aus DATA.objs komplett neu aufbauen: je Equipe auf möglichst wenige Touren zu 90–100% packen (C13).
 // Bestehende Tour-Einstellungen (Personen/Deckel/Fahrzeug/Briefing/Ferien) werden nach Reihenfolge übernommen.
 function rebuildTours(){
-  const prev={tag:[],garten:[],abend:[],spezial:[]}; DATA.tours.forEach(t=>{if(prev[t.eq])prev[t.eq].push(t);});
+  const prev={tag:[],garten:[],abend:[],spezial:[],morgen:[]}; DATA.tours.forEach(t=>{if(prev[t.eq])prev[t.eq].push(t);});
   const tours=[];
   EQUIPES.forEach(eq=>{
     const group=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0);
@@ -1526,7 +1535,7 @@ function rebuildTours(){
     packGroup(group,eq,persons,caps).forEach((bin,i)=>{const e=prev[eq][i];
       tours.push({id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
         maxUtil:e?e.maxUtil:defaultMaxUtil(eq),
-        vehicle:e?e.vehicle:(eq!=="abend"),briefing:e?e.briefing:(eq!=="abend"),
+        vehicle:e?e.vehicle:(eq!=="abend"&&eq!=="morgen"),briefing:e?e.briefing:(eq!=="abend"&&eq!=="morgen"),
         ferienKW:e?e.ferienKW:[],objs:bin.map(o=>o.id)});});
   });
   DATA.tours=tours; ensureCurTour();
@@ -1614,7 +1623,7 @@ function applyKunden(rows){
 }
 
 /* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
-const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["rm","Rasen/Turnus mähen"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
+const SVCLIST=[["ur","UR Tour (Hauswart)"],["ura","UR Abend"],["urm","UR Morgen"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["rm","Rasen/Turnus mähen"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
 function openObjModal(id){
   const o=objById(id); if(!o)return;
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
@@ -1713,8 +1722,8 @@ function normalizePlan(d){
     {const phys=Math.round(targetUtil(t.eq)), d90=Math.round(targetUtil(t.eq)*0.90);
      if(t.maxUtil===phys||t.maxUtil===d90) t.maxUtil=defaultMaxUtil(t.eq);}  // frühere Standardwerte (100%/90%) auf aktuellen Standard (95%) heben
     {const [lo,hi]=maxUtilRange(t.eq); t.maxUtil=clamp(t.maxUtil,lo,hi);}  // auf physische Hürde klemmen
-    if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend");
-    if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend");
+    if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend"&&t.eq!=="morgen");
+    if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend"&&t.eq!=="morgen");
     if(!t.id) t.id = EQ[t.eq].short+"?";
   });
   d.wages = (d.wages&&typeof d.wages==="object") ? {...WAGES_DEF,...d.wages} : {...WAGES_DEF};
