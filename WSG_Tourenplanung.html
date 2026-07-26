@@ -64,6 +64,7 @@ tr:hover td{background:var(--panel2)}
 .axis span{position:absolute;right:4px;font-size:10px;color:var(--mut);transform:translateY(-50%)}
 .blk{position:absolute;left:2px;right:2px;border-radius:4px;padding:2px 4px;font-size:10px;overflow:hidden;color:#06121c;border:1px solid rgba(0,0,0,.15)}
 .blk small{display:block;opacity:.85;font-size:9px;line-height:1.15}
+.blk.drive{background:repeating-linear-gradient(45deg,#8a94a6,#8a94a6 5px,#7d8798 5px,#7d8798 10px)!important;color:#0d1520;font-style:italic;border:1px dashed rgba(0,0,0,.35);opacity:.9}
 .normline{position:absolute;left:0;right:0;border-top:1px dashed var(--bad);pointer-events:none}
 .normline span{position:absolute;left:2px;top:-11px;font-size:9px;color:var(--bad)}
 .strip{display:flex;gap:1px;margin-top:6px}
@@ -280,7 +281,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26d</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26f</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -305,6 +306,9 @@ const MAXOBJ={tag:14,garten:22,abend:12};           // max. Objekte je Tour
 const PERPERSON={tag:2520,garten:2520,abend:1350};  // Kapazität min/Woche je Person
 const PACK_FACTOR=0.90;                             // Arbeitsanteil je Tour (Rest ~10% = Fahrzeit) → Ziel-Auslastung 90–100%
 const WEEKMIN=2520;                                 // 42 h = 100 % je Person
+const JUMP_MIN=22;                                  // Weg-Sprung (min) ab dem eine Tour geografisch „reisst" → neue Tour (A)
+const JUMP_MINFILL=0.55;                            // erst ab dieser Füllung (Anteil Ziel-Auslastung) darf ein Weit-Sprung eine neue Tour öffnen
+const DETOUR_SHARE=30;                              // Fahrtanteil % ab dem eine Tour als „viel Weg für wenig Arbeit" markiert wird (B)
 const DAYTARGET=510;                                // Ø 8h24 je Werktag (min)
 const SOCIAL_DEF=20, FZKOST_DEF=8000;
 const WAGES_DEF={tag:5700,garten:5300,abend:4500,admin:6300};
@@ -400,7 +404,7 @@ function buildDefault(){
   ["tag","garten","abend"].forEach(eq=>{
     const group=objs.filter(o=>eqFor(o)===eq);
     packGroup(group,eq,PERS[eq]).forEach((bin,i)=>tours.push({
-      id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:100,
+      id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),
       vehicle:eq!=="abend",briefing:eq!=="abend",objs:bin.map(o=>o.id),ferienKW:[]}));
   });
   return {objs,tours,wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,
@@ -560,17 +564,22 @@ function buildWeek(t,kw,cov){
   const weights=workDays.map(d=>DAYTARGET-((t.briefing&&d===briefDay&&!holiDays.has(briefDay))?briefLen:0));
   const wsum=weights.reduce((a,b)=>a+b,0);
   const perDayTarget=workDays.map((d,i)=>totalWork*weights[i]/wsum);
-  // Fülle Tag für Tag
-  let queue=items.slice();
+  // Fülle Tag für Tag — je Objekt zuerst ein FAHRT-Chunk (grau), dann der ARBEITS-Chunk (farbig).
+  // Kapazitätsneutral: Summe Fahrt+Arbeit bleibt gleich wie bisher, nur getrennt dargestellt.
+  let queue=[];
+  items.forEach(it=>{
+    if(it.drive>0.5) queue.push({kind:"drive",min:it.drive,o:it.o,cov:it.cov,from:it.from});
+    queue.push({kind:"work",min:it.min,o:it.o,cov:it.cov,from:it.from});
+  });
   const [ws,we]=eqw.work;
-  const dayDrive=[];   // Home → erstes Objekt je Werktag (Anfahrt)
+  const dayDrive=[];   // Home → erstes Objekt je Werktag (Anfahrt, Kopfzeile)
   workDays.forEach((d,i)=>{
     let cursor=ws, filled=0; const target=perDayTarget[i]; let firstOfDay=true;
     while(queue.length && filled< target-1){
-      const it=queue[0];
-      if(firstOfDay){ dayDrive[d]=distMin(HOME,it.o); firstOfDay=false; }
-      const cont=!!it._started;                 // schon an einem Vortag/vorher begonnen
-      const need=(it._rest!=null?it._rest:it.min+it.drive);
+      const ch=queue[0];
+      if(firstOfDay){ dayDrive[d]=distMin(HOME,ch.o); firstOfDay=false; }
+      const cont=!!ch._started;                 // schon an einem Vortag/vorher begonnen
+      const need=(ch._rest!=null?ch._rest:ch.min);
       const room=target-filled;
       const place=Math.min(need,room);
       // Zeit setzen mit Mittagspause 12-13
@@ -589,18 +598,29 @@ function buildWeek(t,kw,cov){
         seg.push([segStart,endH]); segStart=endH; remaining=0;
       }
       cursor=seg[seg.length-1][1];
-      const svc=dominantService(it.o,kw,t.eq); const col=SERVICE[svc]?.col||"#4aa3ff";
-      seg.forEach((sg,si)=>{
-        const isCont=cont||si>0;
-        days[d].push({s:sg[0],e:sg[1],oid:it.o.id,cov:!!it.cov,
-          label:(it.cov?"🔁 ":"")+(isCont?"↪ ":"")+it.o.id+(it.cov?(" · Ablöse "+it.from):""),
-          sub:isCont?"(Forts.) "+it.o.street:(it.o.street+" · "+it.o.kunde+" · "+Math.round(it.min)+"′"),
-          title:(isCont?"Fortsetzung vom Vortag · ":"")+it.o.plz+" "+it.o.ort+" · "+(SERVICE[svc]?.label||""),
-          col, cls:it.cov?"cov":""});
-        it._started=true;
-      });
+      if(ch.kind==="drive"){
+        seg.forEach((sg,si)=>{
+          days[d].push({s:sg[0],e:sg[1],oid:null,cov:false,drive:true,
+            label:"🚗 Fahrt"+((cont||si>0)?" (Forts.)":"")+" → "+ch.o.id,
+            sub:"nach "+(ch.o.street||ch.o.ort||"")+" · "+Math.round(ch.min)+"′",
+            title:"Fahrzeit zu "+ch.o.id+" · "+(ch.o.plz||"")+" "+(ch.o.ort||""),
+            col:"#8a94a6", cls:"drive"});
+        });
+        ch._started=true;
+      } else {
+        const svc=dominantService(ch.o,kw,t.eq); const col=SERVICE[svc]?.col||"#4aa3ff";
+        seg.forEach((sg,si)=>{
+          const isCont=cont||si>0;
+          days[d].push({s:sg[0],e:sg[1],oid:ch.o.id,cov:!!ch.cov,
+            label:(ch.cov?"🔁 ":"")+(isCont?"↪ ":"")+ch.o.id+(ch.cov?(" · Ablöse "+ch.from):""),
+            sub:isCont?"(Forts.) "+ch.o.street:(ch.o.street+" · "+ch.o.kunde+" · "+Math.round(ch.min)+"′"),
+            title:(isCont?"Fortsetzung vom Vortag · ":"")+ch.o.plz+" "+ch.o.ort+" · "+(SERVICE[svc]?.label||""),
+            col, cls:ch.cov?"cov":""});
+          ch._started=true;
+        });
+      }
       filled+=place;
-      if(place>=need){queue.shift();} else {it._rest=need-place; break;}
+      if(place>=need){queue.shift();} else {ch._rest=need-place; break;}
     }
     // Briefing
     if(t.briefing && d===briefDay && !holiDays.has(briefDay)){
@@ -633,15 +653,18 @@ function buildTourCard(t){
   const barW=clamp(y.avg,0,100);
   const staffed=(DATA.staff||[]).filter(s=>s.tid===t.id).length;   // zugeteilte Mitarbeitende
   const understaffed=staffed<t.persons;
+  const tr=tourTravel(t); const detour=tr.share>DETOUR_SHARE;      // viel Weg für wenig Arbeit?
   card.innerHTML=`<div class="tt"><span class="pill ${EQ[t.eq].cls}">${t.id}</span> ${tourLabel(t)}</div>
     <div class="row muted">${t.objs.length} Objekte · ${t.persons} P · ${staffed} MA</div>
+    <div class="row muted" style="font-size:11px">🚗 ${nf(tr.drive)} min Weg/Wo · <span class="${detour?'over':''}">${nf(tr.share)}% Fahrtanteil</span></div>
     ${understaffed?`<div class="warnrow">⚠ Nicht besetzt — ${staffed}/${t.persons} Mitarbeitende. Person zuteilen (Reiter Personal).</div>`:``}
+    ${detour?`<div class="warnrow">🚗 Viel Weg für wenig Arbeit (${nf(tr.share)}%) — Objekte prüfen/umverteilen.</div>`:``}
     <div class="bar ${cls}"><i style="width:${barW}%"></i></div>
     <div class="row" style="font-size:12px"><span class="${y.avg>105?'over':y.avg>=80?'good':'mid'}">Ø ${nf(y.avg)}%</span>
       <span class="${y.peak>110?'over':'muted'}">· Spitze ${nf(y.peak)}%</span></div>
     <div class="row">
       <button class="sm" data-p="-1">−</button><span>${t.persons} P</span><button class="sm" data-p="1">+</button>
-      <label class="chk">max% <input type="number" class="maxu" value="${t.maxUtil}" style="width:56px"></label>
+      <label class="chk" title="Ziel-Auslastung dieser Tour (42h=100%). Tiefer = mehr Puffer/mehr Touren, höher = voller. Max = Jahres-Hürde ${Math.round(physCeil(t.eq))}%.">Ziel% <input type="number" class="maxu" value="${t.maxUtil}" min="${maxUtilRange(t.eq)[0]}" max="${maxUtilRange(t.eq)[1]}" style="width:56px"></label>
     </div>
     <div class="row">
       <label class="chk"><input type="checkbox" class="veh" ${t.vehicle?"checked":""}>🚗</label>
@@ -652,7 +675,7 @@ function buildTourCard(t){
   card.addEventListener("click",e=>{if(e.target.closest("button,input,label"))return;selectTour(t.id);});
   card.querySelector('[data-p="-1"]').onclick=e=>{e.stopPropagation();setPersons(t,-1);};
   card.querySelector('[data-p="1"]').onclick=e=>{e.stopPropagation();setPersons(t,1);};
-  card.querySelector(".maxu").onchange=e=>{setMaxUtil(t,+e.target.value||100);};
+  card.querySelector(".maxu").onchange=e=>{setMaxUtil(t,+e.target.value||defaultMaxUtil(t.eq));};
   card.querySelector(".veh").onchange=e=>{t.vehicle=e.target.checked;persist();renderPlanKpi();};
   card.querySelector(".brf").onchange=e=>{t.briefing=e.target.checked;persist();renderDetail();};
   card.querySelector('[data-del="1"]').onclick=e=>{e.stopPropagation();delTour(t.id);};
@@ -681,7 +704,7 @@ function renderTourGrid(){
   });
 }
 function setPersons(t,d){t.persons=clamp(t.persons+d,1,6);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
-function setMaxUtil(t,v){t.maxUtil=clamp(v,50,140);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
+function setMaxUtil(t,v){const [lo,hi]=maxUtilRange(t.eq);t.maxUtil=clamp(v,lo,hi);redistributeCrew(t.eq);persist();ensureCurTour();renderAll();}
 
 /* ============ Umplanen / Packen (C13) — mit harter 105%-Jahresgrenze ============ */
 const ANNUAL_CAP=105;   // Gesamtarbeitszeit/Jahr je Person darf max. 105% des Pensums sein (5%-Hürde)
@@ -699,31 +722,72 @@ function binAnnualUtil(objs,eq,persons){
   for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
   return (work+drive)/persons/WEEKMIN*100;
 }
-// Ziel-Jahres-Auslastung je Tour = physische Schichtkapazität (Tag/Garten 100%=42h, Abend ~54%=22.5h).
-// So wird die Schicht voll genutzt, aber nie überfüllt.
+// Natürliche Ziel-Jahres-Auslastung je Equipe = physische Schichtkapazität (Tag/Garten 100%=42h, Abend ~54%=22.5h).
 function targetUtil(eq){ return PERPERSON[eq]/WEEKMIN*100; }
-// Packt eine Objektgruppe (Next-Fit, geografische Kette): Tour wird gefüllt, bis das nächste Objekt die
-// Ziel-Jahresauslastung überschreiten würde → neue Tour. Die letzte Tour trägt den Rest (tiefer).
-// Kein Bin überschreitet das Ziel (ausser ein einzelnes Objekt ist allein grösser) → Jahres-Ø bleibt ≤ ~100%/54%.
-function packGroup(objs,eq,persons){
-  const target=targetUtil(eq);
+// Physische Obergrenze (Jahres-Hürde) je Equipe: Ziel + 5% — NIE überschreiten (Tag/Garten 105%, Abend ~56%).
+function physCeil(eq){ return targetUtil(eq)*ANNUAL_CAP/100; }
+// Zulässiger max%-Bereich der Tour-Steuerung (Anzeige-Basis 42h): min. 40%, max. physische Hürde.
+function maxUtilRange(eq){ return [40, Math.round(physCeil(eq))]; }
+function defaultMaxUtil(eq){ return Math.round(targetUtil(eq)); }   // Tag/Garten 100, Abend 54
+// Ziel eines Bins = die max%-Vorgabe der Tour an dieser Position (oder Equipe-Default), hart auf die Hürde geklemmt.
+function binTarget(caps,i,eq){ const [lo,hi]=maxUtilRange(eq); return clamp((caps&&caps[i]!=null)?caps[i]:defaultMaxUtil(eq),lo,hi); }
+// Packt eine Objektgruppe (Next-Fit, geografische Kette). Jede Tour wird bis zu IHRER max%-Vorgabe gefüllt
+// (caps[i]), danach neue Tour. Kein Bin überschreitet seine Vorgabe bzw. die physische Hürde → Jahres-Ø ≤ max%.
+function packGroup(objs,eq,persons,caps){
   const order=nnOrder(objs); const bins=[]; let cur=[];
   order.forEach(o=>{
-    if(cur.length && (cur.length>=MAXOBJ[eq] || binAnnualUtil(cur.concat([o]),eq,persons)>target)){ bins.push(cur); cur=[]; }
+    if(cur.length){
+      const tgt=binTarget(caps,bins.length,eq);        // Ziel der AKTUELL gefüllten Tour
+      const capFull = cur.length>=MAXOBJ[eq] || binAnnualUtil(cur.concat([o]),eq,persons)>tgt;
+      // A: geografischer Riss — nächster Stopp liegt weit weg. Nur schneiden, wenn die Tour bereits
+      // sinnvoll gefüllt ist (JUMP_MINFILL), damit der Weg im Verhältnis zum Nutzen steht.
+      const hop = distMin(cur[cur.length-1], o);
+      const farJump = hop>JUMP_MIN && binAnnualUtil(cur,eq,persons) >= tgt*JUMP_MINFILL;
+      if(capFull || farJump){ bins.push(cur); cur=[]; }
+    }
     cur.push(o);
   });
   if(cur.length) bins.push(cur);
+  // Nachlese: unterfüllte Rest-Bins in den GEOGRAFISCH nächsten Bin schmelzen, solange dessen Ziel
+  // nicht überschritten wird → keine Zwerg-Touren durch die Weit-Sprung-Regel, aber regional sauber.
+  const centroid=b=>{const n=b.length||1;return {lat:b.reduce((a,o)=>a+o.lat,0)/n, lon:b.reduce((a,o)=>a+o.lon,0)/n};};
+  let merged=true;
+  while(merged && bins.length>1){
+    merged=false;
+    // kleinsten (am schwächsten gefüllten, gemessen an seinem eigenen Ziel) Bin zuerst auflösen
+    let si=-1,sr=1e9;
+    bins.forEach((b,i)=>{const r=binAnnualUtil(b,eq,persons)/binTarget(caps,i,eq); if(r<sr){sr=r;si=i;}});
+    if(si<0 || sr>=JUMP_MINFILL) break;          // alle Bins ausreichend gefüllt → fertig
+    const src=bins[si], sc=centroid(src);
+    let bi=-1,bd=1e9;
+    bins.forEach((b,i)=>{ if(i===si)return; const c=centroid(b); const d=distMin(sc,c);
+      const fits=binAnnualUtil(b.concat(src),eq,persons)<=binTarget(caps,i,eq) && b.length+src.length<=MAXOBJ[eq];
+      if(fits && d<bd){bd=d;bi=i;} });
+    if(bi>=0){ bins[bi]=bins[bi].concat(src); bins.splice(si,1); merged=true; }
+    else break;   // isolierter Rest passt nirgends → als eigene (kleine) Tour belassen
+  }
   return bins;
+}
+// Jahres-Ø Weg/Arbeit einer Tour (min/Woche, Kette einmal — konsistent mit binAnnualUtil)
+function tourTravel(t){
+  const objs=(t.objs||[]).map(objById).filter(Boolean).filter(o=>weeklyAvgMin(o,t.eq)>0);
+  const work=objs.reduce((a,o)=>a+weeklyAvgMin(o,t.eq),0);
+  const order=nnOrder(objs);
+  let drive=order.length?distMin(HOME,order[0]):0;
+  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
+  const tot=work+drive;
+  return {work,drive,share:tot?drive/tot*100:0};
 }
 function packEquipe(eq){
   const existing=DATA.tours.filter(t=>t.eq===eq);
   const persons=existing[0]?.persons||PERS[eq];
   const objs=[]; existing.forEach(t=>t.objs.forEach(id=>{const o=objById(id);if(o)objs.push(o);}));
   if(!objs.length){ DATA.tours=DATA.tours.filter(t=>t.eq!==eq); return; }
-  const bins=packGroup(objs,eq,persons);
+  const caps=existing.map(t=>t.maxUtil);         // je Tour ihre max%-Vorgabe (Position = Reihenfolge)
+  const bins=packGroup(objs,eq,persons,caps);
   const rebuilt=bins.map((bin,i)=>{const e=existing[i];
     return {id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
-      maxUtil:e?e.maxUtil:100, vehicle:e?e.vehicle:(eq!=="abend"),
+      maxUtil:e?e.maxUtil:defaultMaxUtil(eq), vehicle:e?e.vehicle:(eq!=="abend"),
       briefing:e?e.briefing:(eq!=="abend"), ferienKW:e?e.ferienKW:[], objs:bin.map(o=>o.id)};});
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
@@ -741,7 +805,7 @@ function optimizeAll(){
 function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))return;
   DATA.tours=DATA.tours.filter(t=>t.id!==id);if(curTour===id)curTour=DATA.tours[0]?.id;persist();renderAll();}
 function addTour(eq){let n=1;while(DATA.tours.find(t=>t.id===EQ[eq].short+String(n).padStart(2,"0")))n++;
-  DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:100,vehicle:eq!=="abend",briefing:eq!=="abend",objs:[],ferienKW:[]});persist();renderAll();}
+  DATA.tours.push({id:EQ[eq].short+String(n).padStart(2,"0"),eq,persons:PERS[eq],maxUtil:defaultMaxUtil(eq),vehicle:eq!=="abend",briefing:eq!=="abend",objs:[],ferienKW:[]});persist();renderAll();}
 function moveObj(objId,toTour){const from=DATA.tours.find(t=>t.objs.includes(objId));const to=DATA.tours.find(t=>t.id===toTour);
   if(!from||!to||from.id===to.id)return;from.objs=from.objs.filter(x=>x!==objId);to.objs.push(objId);persist();renderAll();flash("Objekt "+objId+" → "+to.id);}
 
@@ -762,10 +826,14 @@ function selectTour(id){curTour=id;$("#tourSelect").value=id;renderTourGrid();re
 function renderPlanKpi(){
   const c=costs();
   const objs=DATA.objs.length, tours=DATA.tours.length;
+  // Gesamt-Fahrtanteil: Σ Weg / (Σ Weg + Σ Arbeit) über alle Touren
+  let wSum=0,dSum=0; DATA.tours.forEach(t=>{const tr=tourTravel(t);wSum+=tr.work;dSum+=tr.drive;});
+  const share=(wSum+dSum)?dSum/(wSum+dSum)*100:0;
   $("#planKpi").innerHTML=`
     <div class="box"><b>${tours}</b><span>Touren</span></div>
     <div class="box"><b>${objs}</b><span>Objekte</span></div>
     <div class="box"><b>${nf(c.fte,1)}</b><span>Feld-FTE</span></div>
+    <div class="box"><b class="${share>DETOUR_SHARE?'over':''}">${nf(share)}%</b><span>Fahrtanteil (Weg/Total)</span></div>
     <div class="box"><b>${c.vehicles}</b><span>Fahrzeuge · ${chf(c.fzTotal)}</span></div>
     <div class="box"><b>${chf(c.total)}</b><span>Personalkosten/Jahr</span></div>`;
 }
@@ -819,8 +887,8 @@ function renderCalendar(t,wk){
         inner+=`<div class="blk ${b.cls}" ${drag}top:${yy}px;height:${hh}px;background:${b.col}" title="${(b.title||'').replace(/"/g,'')}">${b.label}<small>${b.sub||""}</small></div>`;
       });
     }
-    const drv=isHoli?0:(wk.dayDrive[d]||0);
-    const drive=drv?` <span class="muted" title="Anfahrt Kloten → 1. Objekt">🚗 ${Math.round(drv)}′</span>`:"";
+    const drvSum=isHoli?0:(wk.days[d]||[]).filter(b=>b.drive).reduce((a,b)=>a+(b.e-b.s)*60,0);
+    const drive=drvSum?` <span class="muted" title="Fahrzeit total an diesem Tag (graue Blöcke)">🚗 ${Math.round(drvSum)}′</span>`:"";
     cols+=`<div><div class="hd">${days[d]}${drive}</div><div class="calcol" style="height:${H+top}px">${inner}</div></div>`;
   }
   box.innerHTML=`<div class="calgrid"><div><div class="hd"></div>${axis}</div>${cols}</div>`;
@@ -1120,9 +1188,10 @@ function rebuildTours(){
   ["tag","garten","abend"].forEach(eq=>{
     const group=DATA.objs.filter(o=>eqOf(o)===eq);
     const persons=prev[eq][0]?prev[eq][0].persons:PERS[eq];
-    packGroup(group,eq,persons).forEach((bin,i)=>{const e=prev[eq][i];
+    const caps=prev[eq].map(t=>t.maxUtil);
+    packGroup(group,eq,persons,caps).forEach((bin,i)=>{const e=prev[eq][i];
       tours.push({id:EQ[eq].short+String(i+1).padStart(2,"0"),eq,persons,
-        maxUtil:e?e.maxUtil:100,
+        maxUtil:e?e.maxUtil:defaultMaxUtil(eq),
         vehicle:e?e.vehicle:(eq!=="abend"),briefing:e?e.briefing:(eq!=="abend"),
         ferienKW:e?e.ferienKW:[],objs:bin.map(o=>o.id)});});
   });
@@ -1245,7 +1314,8 @@ function normalizePlan(d){
     t.objs = Array.isArray(t.objs) ? t.objs.filter(id=>ids.has(id)) : [];
     t.ferienKW = Array.isArray(t.ferienKW) ? t.ferienKW : [];
     if(typeof t.persons!=="number") t.persons = PERS[t.eq]||1;
-    if(typeof t.maxUtil!=="number") t.maxUtil = 100;
+    if(typeof t.maxUtil!=="number") t.maxUtil = defaultMaxUtil(t.eq);
+    {const [lo,hi]=maxUtilRange(t.eq); t.maxUtil=clamp(t.maxUtil,lo,hi);}  // auf physische Hürde klemmen (migriert alte Abend-100 → ~56)
     if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend");
     if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend");
     if(!t.id) t.id = EQ[t.eq].short+"?";
