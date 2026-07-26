@@ -155,6 +155,7 @@ tr:hover td{background:var(--panel2)}
         <button class="sm primary" id="btnOptimize" title="Objekte je Equipe lastbalanciert neu verteilen">🔄 Umplanen (optimieren)</button>
         <button class="sm" data-add="tag">＋ Hauswart</button>
         <button class="sm" data-add="garten">＋ Garten</button>
+        <button class="sm" data-add="spezial">＋ Spezial</button>
         <button class="sm" data-add="abend">＋ Abend</button>
       </div>
       <div id="tourGrid" style="margin-top:10px"></div>
@@ -285,7 +286,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26i</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26l</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -775,8 +776,8 @@ function targetUtil(eq){ return PERPERSON[eq]/WEEKMIN*100; }
 function physCeil(eq){ return targetUtil(eq)*ANNUAL_CAP/100; }
 // Zulässiger max%-Bereich der Tour-Steuerung (Anzeige-Basis 42h): min. 40%, max. physische Hürde.
 function maxUtilRange(eq){ return [40, Math.round(physCeil(eq))]; }
-const TARGET_FILL=0.90;   // Standard-Ziel%: 90% der Schichtkapazität → 10% Puffer für Spitzen/Feiertage
-function defaultMaxUtil(eq){ return Math.round(targetUtil(eq)*TARGET_FILL); }   // Tag/Garten/Spezial 90, Abend ~48
+const TARGET_FILL=0.95;   // Standard-Ziel%: 95% der Schichtkapazität → 5% Puffer für Spitzen/Feiertage
+function defaultMaxUtil(eq){ return Math.round(targetUtil(eq)*TARGET_FILL); }   // Tag/Garten/Spezial 95, Abend ~51
 // Ziel eines Bins = die max%-Vorgabe der Tour an dieser Position (oder Equipe-Default), hart auf die Hürde geklemmt.
 function binTarget(caps,i,eq){ const [lo,hi]=maxUtilRange(eq); return clamp((caps&&caps[i]!=null)?caps[i]:defaultMaxUtil(eq),lo,hi); }
 // Packt eine Objektgruppe (Next-Fit, geografische Kette). Jede Tour wird bis zu IHRER max%-Vorgabe gefüllt
@@ -845,14 +846,46 @@ function packEquipe(eq, shrink){
   DATA.tours=[...DATA.tours.filter(t=>t.eq!==eq), ...rebuilt];
   reorderTours();
 }
+// VORGABE-treu einfüllen: verteilt alle Objekte einer Equipe auf die VORHANDENEN Touren.
+// Anzahl Touren, Besetzung (persons) und Ziel% (maxUtil) bleiben unverändert — sie sind Planungs-Vorgaben.
+// Objekte werden geografisch (nächste Tour mit freier Kapazität bis Ziel%) zugeteilt; passt nichts mehr,
+// erhält die relativ am wenigsten volle Tour den Rest (Überlast wird in den Empfehlungen gemeldet).
+function fillExistingTours(eq){
+  const tours=DATA.tours.filter(t=>t.eq===eq);
+  if(!tours.length){ packEquipe(eq); return; }                 // keine Vorgabe-Touren → einmalig automatisch erzeugen
+  const objs=DATA.objs.filter(o=>weeklyAvgMin(o,eq)>0);
+  tours.forEach(t=>t.objs=[]);
+  if(!objs.length){ return; }
+  // geografische Startpunkte (Farthest-Point-Sampling), einer je Tour
+  const seeds=[]; let first=objs[0],fd=-1; objs.forEach(o=>{const d=distMin(HOME,o);if(d>fd){fd=d;first=o;}}); seeds.push(first);
+  while(seeds.length<tours.length){ let cand=null,cd=-1;
+    objs.forEach(o=>{let dm=1e9;seeds.forEach(s=>{const d=distMin(s,o);if(d<dm)dm=d;});if(dm>cd){cd=dm;cand=o;}});
+    if(!cand)break; seeds.push(cand); }
+  const cent=tours.map((t,i)=>({lat:(seeds[i]||seeds[0]).lat,lon:(seeds[i]||seeds[0]).lon}));
+  const caps=tours.map(t=>t.maxUtil);
+  const upd=i=>{const os=tours[i].objs.map(objById).filter(Boolean); if(os.length)cent[i]={lat:os.reduce((a,x)=>a+x.lat,0)/os.length,lon:os.reduce((a,x)=>a+x.lon,0)/os.length};};
+  nnOrder(objs).forEach(o=>{
+    const idxs=tours.map((t,i)=>i).sort((a,b)=>distMin(cent[a],o)-distMin(cent[b],o));   // nächste Tour zuerst
+    let placed=false;
+    for(const i of idxs){
+      const after=binAnnualUtil(tours[i].objs.map(objById).filter(Boolean).concat([o]),eq,tours[i].persons);
+      if(after<=binTarget(caps,i,eq)+0.001){ tours[i].objs.push(o.id); upd(i); placed=true; break; }
+    }
+    if(!placed){   // alle Touren am Ziel → relativ am wenigsten volle nimmt den Rest (Überlast → Empfehlung)
+      let bi=0,br=1e9; tours.forEach((t,i)=>{const r=binAnnualUtil(t.objs.map(objById).filter(Boolean),eq,t.persons)/Math.max(1,binTarget(caps,i,eq)); if(r<br){br=r;bi=i;}});
+      tours[bi].objs.push(o.id); upd(bi);
+    }
+  });
+  reorderTours();
+}
 function reorderTours(){const rank={tag:0,garten:1,spezial:2,abend:3};
   DATA.tours.sort((a,b)=>(rank[a.eq]-rank[b.eq])||a.id.localeCompare(b.id));}
 function ensureCurTour(){ if(!DATA.tours.find(t=>t.id===curTour)) curTour=DATA.tours[0]?.id; }
-function redistributeCrew(eq){ packEquipe(eq); }       // Personal-/Deckeländerung → neu packen
+function redistributeCrew(eq){ fillExistingTours(eq); }       // Personal-/Ziel-Änderung → in vorhandene Touren neu einfüllen (Anzahl bleibt)
 function optimizeAll(){
-  EQUIPES.forEach(eq=>packEquipe(eq,true));   // shrink=true: auf Mindestanzahl verdichten
+  EQUIPES.forEach(eq=>fillExistingTours(eq));   // Vorgabe-treu: Anzahl/Besetzung/Ziel% bleiben, nur Objekte optimal verteilen
   persist(); ensureCurTour(); renderAll();
-  flash("🔄 Gepackt — keine Tour über 105% Jahres-Auslastung");
+  flash("🔄 Objekte in die vorgegebenen Touren verteilt (Anzahl · Besetzung · Ziel% unverändert)");
 }
 
 function delTour(id){if(!confirm("Tour "+id+" löschen? Objekte werden frei."))return;
@@ -1330,7 +1363,7 @@ function appendObjects(rows){
   const ex=new Set(DATA.objs.map(o=>o.id));
   const add=rows.map(rowToObj).filter(o=>!ex.has(o.id));
   add.forEach(o=>DATA.objs.push(o));
-  rebuildTours();persist();renderAll();flash(add.length+" Objekte hinzugefügt & Touren neu gepackt (90–100%)");
+  EQUIPES.forEach(eq=>fillExistingTours(eq));persist();renderAll();flash(add.length+" Objekte in die vorhandenen Touren eingefügt");
 }
 function replaceAllObjects(rows){
   if(!confirm("Alle "+DATA.objs.length+" Objekte ersetzen? Kann nicht rückgängig gemacht werden."))return;
@@ -1426,7 +1459,7 @@ function saveObjModal(id){
   closeObjModal();
   // Betroffene Equipen (alt ∪ neu) neu packen → Objekt landet in den richtigen Touren
   const affected=new Set([...before,...objEquipes(o)]);
-  affected.forEach(eq=>packEquipe(eq));
+  affected.forEach(eq=>fillExistingTours(eq));   // in vorhandene Touren einfüllen (Anzahl/Besetzung/Ziel% bleiben)
   ensureCurTour(); persist(); renderAll();
   flash("Objekt "+o.id+" aktualisiert");
 }
@@ -1449,7 +1482,8 @@ function normalizePlan(d){
     t.ferienKW = Array.isArray(t.ferienKW) ? t.ferienKW : [];
     if(typeof t.persons!=="number") t.persons = PERS[t.eq]||1;
     if(typeof t.maxUtil!=="number") t.maxUtil = defaultMaxUtil(t.eq);
-    {const oldDef=Math.round(targetUtil(t.eq)); if(t.maxUtil===oldDef) t.maxUtil=defaultMaxUtil(t.eq);}  // alten 100%-Standard auf neuen 90%-Standard heben
+    {const phys=Math.round(targetUtil(t.eq)), d90=Math.round(targetUtil(t.eq)*0.90);
+     if(t.maxUtil===phys||t.maxUtil===d90) t.maxUtil=defaultMaxUtil(t.eq);}  // frühere Standardwerte (100%/90%) auf aktuellen Standard (95%) heben
     {const [lo,hi]=maxUtilRange(t.eq); t.maxUtil=clamp(t.maxUtil,lo,hi);}  // auf physische Hürde klemmen
     if(typeof t.vehicle!=="boolean") t.vehicle = (t.eq!=="abend");
     if(typeof t.briefing!=="boolean") t.briefing = (t.eq!=="abend");
