@@ -297,7 +297,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-26y</b></div>
+<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-26z</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -571,14 +571,23 @@ function tourWeekObjMap(t,kw){ const m={}; tourSchedule(t).weekItems[kw].forEach
 /* ============ Tour-Wochenlast (Arbeit + Fahrt) ============ */
 function absentPersons(t,kw){ return t.ferienKW.filter(w=>w===kw).length; }
 function tourWorkMin(t,kw){ return tourSchedule(t).weekMin[kw]||0; }   // geglättete Arbeitsminuten der KW
-function tourDriveMin(t,kw){ // Fahrzeit NUR zwischen den Objekten (keine An-/Heimfahrt: Arbeitszeit startet auf dem 1. Objekt)
+// Nur INTRADAY-Wege: Summe der Wege zwischen Objekten, abzüglich der (Arbeitstage−1) grössten Sprünge.
+// Diese grössten Sprünge sind die Tagesgrenzen (dazwischen Heim-/Anfahrt = zählt nicht). Objekte werden geografisch
+// so auf die Tage verteilt, dass die weitesten Sprünge über Nacht fallen → nur Wege am selben Tag bleiben.
+function intradayDrive(order, weeklyWorkMin){
+  if(!order || order.length<2) return 0;
+  const gaps=[]; for(let i=1;i<order.length;i++) gaps.push(distMin(order[i-1],order[i]));
+  const total=gaps.reduce((a,b)=>a+b,0);
+  const nDays=clamp(Math.ceil((weeklyWorkMin||0)/DAYTARGET),1,5);   // genutzte Arbeitstage
+  const sorted=[...gaps].sort((a,b)=>b-a);
+  let cut=0; for(let i=0;i<nDays-1 && i<sorted.length;i++) cut+=sorted[i];   // grösste Sprünge = Tagesgrenzen raus
+  return Math.max(0,total-cut);
+}
+function tourDriveMin(t,kw){ // Fahrzeit NUR intraday zwischen Objekten (keine An-/Heim-/Tageswechsel-Fahrt)
   const map=tourWeekObjMap(t,kw);
   const objs=Object.keys(map).map(objById).filter(Boolean);
   if(!objs.length) return 0;
-  const order=nnOrder(objs);
-  let drive=0;   // Anfahrt Kloten->1. Objekt zählt NICHT zum Pensum
-  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
-  return drive;
+  return intradayDrive(nnOrder(objs), tourWorkMin(t,kw));
 }
 function nnOrder(objs){
   const rest=[...objs], out=[]; let cur=HOME;
@@ -755,7 +764,9 @@ function buildWeek(t,kw,cov){
     let cursor=dayStart, filled=0; const limit=Math.min(perDayLimit[i], windowMin); let firstOfDay=true;
     while(queue.length && filled< limit-0.5){
       const ch=queue[0];
-      if(firstOfDay){ dayDrive[d]=0; firstOfDay=false; }   // Anfahrt zum 1. Objekt des Tages zählt nicht
+      // Kein Weg zum ERSTEN Objekt des Tages: Anfahrt/Tageswechsel zählt nicht → führenden Fahrt-Chunk überspringen
+      if(firstOfDay && ch.kind==="drive"){ queue.shift(); continue; }
+      if(firstOfDay){ dayDrive[d]=0; firstOfDay=false; }
       const cont=!!ch._started;
       const need=(ch._rest!=null?ch._rest:ch.min);
       const place=Math.min(need, limit-filled);
@@ -873,8 +884,7 @@ function weeklyAvgMin(o,eq){                          // Jahres-Wochen-Ø eines 
 function binAnnualUtil(objs,eq,persons){
   if(!objs.length) return 0;
   const work=objs.reduce((a,o)=>a+weeklyAvgMin(o,eq),0);
-  const order=nnOrder(objs); let drive=0;   // keine Anfahrt im Pensum
-  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
+  const drive=intradayDrive(nnOrder(objs), work/Math.max(1,persons));   // nur Intraday-Wege
   return (work+drive)/persons/WEEKMIN*100;
 }
 // Natürliche Ziel-Jahres-Auslastung je Equipe = physische Schichtkapazität (Tag/Garten 100%=42h, Abend ~54%=22.5h).
@@ -928,9 +938,7 @@ function packGroup(objs,eq,persons,caps){
 function tourTravel(t){
   const objs=(t.objs||[]).map(objById).filter(Boolean).filter(o=>weeklyAvgMin(o,t.eq)>0);
   const work=objs.reduce((a,o)=>a+weeklyAvgMin(o,t.eq),0);
-  const order=nnOrder(objs);
-  let drive=0;   // keine Anfahrt im Pensum: nur Wege zwischen den Objekten
-  for(let i=1;i<order.length;i++) drive+=distMin(order[i-1],order[i]);
+  const drive=intradayDrive(nnOrder(objs), work/Math.max(1,t.persons||1));   // nur Intraday-Wege
   const tot=work+drive;
   return {work,drive,share:tot?drive/tot*100:0};
 }
