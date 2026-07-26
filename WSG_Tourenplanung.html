@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com https://api3.geo.admin.ch; frame-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
 <title>WSG Tourenplanung</title>
 <style>
 :root{
@@ -220,6 +220,7 @@ tr:hover td{background:var(--panel2)}
         <button class="sm" id="btnTplObj">⬇ Excel-Vorlage</button>
         <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">➕ Objekte hinzufügen<input type="file" id="fileAppend" accept=".xlsx,.csv" hidden></label>
         <label class="sm" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">♻ Alle ersetzen<input type="file" id="fileReplace" accept=".xlsx,.csv" hidden></label>
+        <button class="sm" id="btnGeo" title="Objekte ohne exakte Koordinaten via Swisstopo geocodieren">🌍 Koordinaten geocodieren</button>
         <span class="sp" style="flex:1"></span>
         <span class="muted" id="objTotal"></span>
       </div>
@@ -289,7 +290,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26u</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26v</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -352,6 +353,44 @@ const PLZLOC={"8302":[47.451,8.585],"8180":[47.521,8.539],"8152":[47.430,8.575],
 function plzCentroid(plz){const p=PLZLOC[String(plz).trim()];
   if(p)return{lat:+(p[0]+(Math.random()-0.5)*0.012).toFixed(4),lon:+(p[1]+(Math.random()-0.5)*0.012).toFixed(4),hit:true};
   return{lat:+(47.42+(Math.random()-0.5)*0.14).toFixed(4),lon:+(8.58+(Math.random()-0.5)*0.20).toFixed(4),hit:false};}
+
+/* ---- Geocoding (Swisstopo, amtlicher CH-Dienst). Sendet NUR Strasse/PLZ/Ort, sonst nichts.
+   Läuft clientseitig im Browser direkt zu geo.admin.ch – keine Daten über einen WSG-Server.
+   Fallback-Kaskade (aus dem Echtdaten-Import gelernt): voll → Klammern/Komma/Slash strippen →
+   beschreibende Wörter entfernen → PLZ/Ort-Zentrum (approx). ---- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function geoQuery(text,addrOnly){
+  const t=String(text||"").trim(); if(!t) return null;
+  const u="https://api3.geo.admin.ch/rest/services/api/SearchServer?searchText="+encodeURIComponent(t)
+    +"&type=locations&limit=1&sr=4326"+(addrOnly?"&origins=address":"");
+  try{ const r=await fetch(u); if(!r.ok) return null; const j=await r.json();
+    if(j.results&&j.results.length){ const a=j.results[0].attrs; const lat=+a.lat,lon=+a.lon;
+      if(isFinite(lat)&&isFinite(lon)) return {lat:+lat.toFixed(6),lon:+lon.toFixed(6)}; } }catch(e){}
+  return null;
+}
+async function geoOne(street,plz,ort){
+  const s=String(street||""), p=String(plz||""), o=String(ort||""), tail=" "+p+" "+o;
+  let g=await geoQuery(s+tail,true);
+  if(!g){ const s2=s.replace(/\(.*?\)/g,"").replace(/,.*$/,"").replace(/\/.*$/,"").trim(); if(s2&&s2!==s.trim()) g=await geoQuery(s2+tail,true); }
+  if(!g){ const s3=s.replace(/\(.*?\)/g,"").replace(/konto\s*\d+/gi,"").replace(/haus\s*[a-zäöü]\b/gi,"")
+      .replace(/allgemeiner\s*teil/gi,"").replace(/\b(tiefgarage|garage|überbauung|ueberbauung|etappe|reinigung|hauswartung|meg|ost|west|hw|teil)\b/gi,"")
+      .replace(/,.*$/,"").replace(/\/.*$/,"").replace(/\s+/g," ").trim(); if(s3) g=await geoQuery(s3+tail,true); }
+  if(!g){ g=await geoQuery((p+" "+o).trim(),false); if(g) g.approx=true; }
+  return g;
+}
+// Geocodiert eine Objektliste; nutzt Adress-Cache + Ratenbegrenzung. onStep(done,total).
+async function geocodeObjs(list,onStep){
+  let ok=0,approx=0,fail=0,done=0; const cache={};
+  for(const o of list){
+    const key=(o.street||"")+"|"+(o.plz||"")+"|"+(o.ort||"");
+    let g=cache[key];
+    if(g===undefined){ g=await geoOne(o.street,o.plz,o.ort); cache[key]=g; await sleep(130); }
+    if(g){ o.lat=+g.lat.toFixed(6); o.lon=+g.lon.toFixed(6); o.geoApprox=!!g.approx; if(g.approx)approx++; else ok++; }
+    else { o.geoApprox=true; fail++; }
+    done++; if(onStep) onStep(done,list.length);
+  }
+  return {ok,approx,fail};
+}
 
 /* ---- Zustand ---- */
 let DATA=null, BRIEF={day:5,start:"15:00",len:60};
@@ -1399,9 +1438,9 @@ function parseFile(file,cb){
 function rowToObj(r){
   const g=(...k)=>{for(const x of k)if(r[x]!==undefined&&r[x]!=="")return r[x];return"";};
   const areaIn=+g("Fläche innen (m²)","areaIn")||300, areaGa=+g("Gartenfläche (m²)")||0;
-  // Lat/Lon: Excel-Wert; sonst PLZ-Mittelpunkt-Fallback (B5)
-  let lat=+g("Lat"),lon=+g("Lon");
-  if(!lat||!lon){const c=plzCentroid(g("PLZ"));lat=c.lat;lon=c.lon;}
+  // Lat/Lon: Excel-Wert; sonst PLZ-Mittelpunkt-Fallback (B5) + Flag zum Nachgeocodieren
+  let lat=+g("Lat"),lon=+g("Lon"), needGeo=false;
+  if(!lat||!lon){const c=plzCentroid(g("PLZ"));lat=c.lat;lon=c.lon;needGeo=true;}
   const services=[];
   const isBiz=/gewerbe|büro/i.test(g("Objekttyp"));
   const uf=+g("Unterhalt Freq/Jahr")||52, um=+g("Unterhalt Min")||Math.round(clamp(areaIn/(isBiz?11:9),90,400));
@@ -1423,7 +1462,7 @@ function rowToObj(r){
   if(spF>0&&spM>0) services.push({k:"sp",freq:spF,min:spM,eq:eqParse(g("Spezial Equipe"))||"spezial"});
   const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45,eq:eqParse(g("Winterdienst Equipe"))||"garten"});
   return {id:g("Objekt-ID","id")||("OBJ-"+Math.random().toString(36).slice(2,6)),
-    street:g("Strasse")||"—",plz:g("PLZ")||"",ort:g("Ort")||"",lat:+lat.toFixed(4),lon:+lon.toFixed(4),
+    street:g("Strasse")||"—",plz:g("PLZ")||"",ort:g("Ort")||"",lat:+lat.toFixed(4),lon:+lon.toFixed(4),geoApprox:needGeo,
     type:g("Objekttyp")||"Wohnliegenschaft",areaIn,areaGa,winter:win,
     pauschMt:+g("Monatspauschale CHF")||0, pauschOn:/ja|1|x|wahr/i.test(String(g("Pauschale statt Stunden (ja/nein)"))),
     kunde:g("Kunde")||"Kunde",contact:g("Ansprechperson")||"",email:g("E-Mail")||"",tel:g("Tel. allgemein")||g("Tel. direkt")||"",services};
@@ -1464,18 +1503,38 @@ function rebuildTours(){
   });
   DATA.tours=tours; ensureCurTour();
 }
-function appendObjects(rows){
+async function appendObjects(rows){
   const ex=new Set(DATA.objs.map(o=>o.id));
   const add=rows.map(rowToObj).filter(o=>!ex.has(o.id));
+  await geocodeNeeded(add.filter(o=>o.geoApprox));          // Adressen ohne Excel-Koordinaten nachgeocodieren (vor dem Packen)
   add.forEach(o=>DATA.objs.push(o));
   if(!DATA.tours.length) rebuildTours();                    // ganz leer → einmalig Touren erzeugen (Startgerüst)
   else EQUIPES.forEach(eq=>fillExistingTours(eq));          // sonst nur in vorhandene Touren einfüllen (nichts neu erzeugen)
   persist();renderAll();flash(add.length+" Objekte in die vorhandenen Touren eingefügt");
 }
-function replaceAllObjects(rows){
+async function replaceAllObjects(rows){
   if(!confirm("Alle "+DATA.objs.length+" Objekte ersetzen? Kann nicht rückgängig gemacht werden."))return;
-  DATA.objs=rows.map(rowToObj);
+  const objs=rows.map(rowToObj);
+  await geocodeNeeded(objs.filter(o=>o.geoApprox));
+  DATA.objs=objs;
   rebuildTours();persist();renderAll();flash(DATA.objs.length+" Objekte neu aufgebaut & Touren gepackt (90–100%)");
+}
+// Geocodiert die übergebenen Objekte mit Fortschrittsanzeige (Swisstopo). Leere Liste = no-op.
+async function geocodeNeeded(list){
+  if(!list||!list.length) return;
+  flash("🌍 Geocodiere "+list.length+" Adresse(n) …");
+  const res=await geocodeObjs(list,(d,n)=>{ if(n>8&&(d%5===0||d===n)) flash("🌍 Geocoding "+d+"/"+n+" …"); });
+  flash("🌍 Geocoding fertig: "+res.ok+" exakt"+(res.approx?" · "+res.approx+" ≈PLZ":"")+(res.fail?" · "+res.fail+" ohne Treffer":""));
+}
+// Manuell: alle Objekte ohne exakte Koordinaten (geoApprox) nachgeocodieren; sonst auf Wunsch alle.
+async function geocodeAll(){
+  if(!DATA.objs||!DATA.objs.length){ flash("Keine Objekte vorhanden"); return; }
+  const need=DATA.objs.filter(o=>o.geoApprox);
+  const list = need.length ? need : DATA.objs.slice();
+  if(!need.length && !confirm("Alle Objekte haben bereits exakte Koordinaten. Trotzdem alle "+list.length+" neu geocodieren?")) return;
+  await geocodeNeeded(list);
+  EQUIPES.forEach(eq=>fillExistingTours(eq));   // Objekte nach neuen Koordinaten in vorhandene Touren einordnen
+  persist(); renderAll();
 }
 function autoAssign(o){ // Einzelzuteilung (Fallback): Objekt der am wenigsten belasteten Tour seiner Equipe zuordnen
   const eq=eqOf(o); const pool=DATA.tours.filter(t=>t.eq===eq);
@@ -1723,6 +1782,7 @@ function wire(){
   $("#btnTplObj").onclick=tplObjekte;
   $("#fileAppend").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],appendObjects);e.target.value="";};
   $("#fileReplace").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],replaceAllObjects);e.target.value="";};
+  $("#btnGeo").onclick=geocodeAll;
   $("#btnFerienAuto").onclick=ferienAuto;
   $("#btnFerienClear").onclick=()=>{DATA.tours.forEach(t=>t.ferienKW=[]);persist();renderFerien();};
   $("#btnTplFerien").onclick=tplFerien;
