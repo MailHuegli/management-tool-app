@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
 <title>WSG Tourenplanung</title>
 <style>
 :root{
@@ -179,7 +180,8 @@ tr:hover td{background:var(--panel2)}
           <input type="number" id="pdfFrom" min="1" max="52" style="width:56px">
           <span class="muted">bis</span>
           <input type="number" id="pdfTo" min="1" max="52" style="width:56px">
-          <button class="sm" id="btnPdf">PDF Tourenblatt</button>
+          <button class="sm" id="btnPdf">PDF Tourenblatt (diese Tour)</button>
+          <button class="sm primary" id="btnPdfAll" title="Deckblatt + Wochenpläne aller Touren in einem Dokument">🖨 Alle Tourenblätter</button>
         </div>
       </div>
       <div class="card">
@@ -286,19 +288,21 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26o</b></div>
+<div class="foot">WSG Tourenplanung · Hauswartung / Gartenunterhalt / Abendreinigung · <b>Build 2026-07-26s</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
 <div id="objModal" class="modal"><div class="modalbox" id="objModalBox"></div></div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="xlsx.full.min.js"></script>
 <script>
 /* =========================================================================
    WSG Tourenplanung — reduziertes, zuverlässiges Kernmodell
    ========================================================================= */
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+// HTML-Escaping gegen (Stored-)XSS: alle Fremd-/Importdaten VOR dem Einsetzen in innerHTML durch esc().
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const nf=(n,d=0)=>Number(n).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const chf=n=>"CHF "+nf(Math.round(n));
@@ -328,6 +332,7 @@ const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],wo
 const SERVICE={ur:{label:"Unterhaltsreinigung",col:"#4aa3ff"},th:{label:"Techn. Hauswart",col:"#38c172"},
                gr:{label:"Grundreinigung",col:"#9b6bff"},ga:{label:"Gartenunterhalt (allg.)",col:"#5fbf6b"},
                gf:{label:"Garten Frühling",col:"#8fd14f"},gs:{label:"Garten Sommer",col:"#39a845"},gh:{label:"Garten Herbst",col:"#d98b30"},
+               rm:{label:"Rasen/Turnus (Hauswart)",col:"#7bbf3a"},
                win:{label:"Winterdienst",col:"#7fc7ff"},sp:{label:"Spezial-/Zwischenreinigung",col:"#ff9f43"}};
 // Feiertage ZH 2026 (KW) — Freitags-/Werktagsfeiertage
 const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Karfreitag"},
@@ -336,7 +341,7 @@ const HOLIDAYS=[{kw:1,d:4,n:"Neujahr"},{kw:1,d:5,n:"Berchtold"},{kw:14,d:5,n:"Ka
 const holidaySet=new Set(HOLIDAYS.map(h=>h.kw+"-"+h.d));
 const WINTER_KW=w=>(w<=9||w>=48);
 // Garten-Saisonfenster (KW von–bis). Winter = Winterdienst (WINTER_KW).
-const SEASON={ga:[12,44], gf:[10,21], gs:[22,35], gh:[36,47]};   // ga=generell, gf=Frühling, gs=Sommer, gh=Herbst
+const SEASON={ga:[12,44], gf:[10,21], gs:[22,35], gh:[36,47], rm:[12,44]};   // ga=generell, gf=Frühling, gs=Sommer, gh=Herbst, rm=Rasen/Turnus (Gartensaison)
 function inSeason(k,kw){ if(k==="win") return WINTER_KW(kw); const s=SEASON[k]; return s?(kw>=s[0]&&kw<=s[1]):true; }
 // PLZ-Mittelpunkte (Region ZH/Glattal) für Geocoding-Fallback (C5/B5)
 const PLZLOC={"8302":[47.451,8.585],"8180":[47.521,8.539],"8152":[47.430,8.575],"8304":[47.412,8.596],
@@ -393,10 +398,11 @@ function buildDefault(){
     } else {                                           // Garten-Liegenschaft (Gartenequipe)
       type="Wohnüberbauung mit Umschwung"; areaIn=Math.round(300+r()*900);
       areaGa=Math.round(500+r()*1700); winter=r()<0.8;
-      const annual=Math.round(areaGa*1.7+900);         // Jahres-Gartenzeit, auf Saisons verteilt
-      services.push({k:"gf",freq:6, min:Math.round(annual*0.28/6)});      // Frühling: Auspflanzen, Rückschnitt, Startpflege
-      services.push({k:"gs",freq:12,min:Math.round(annual*0.44/12)});     // Sommer: Rasen/Wässern/Unterhalt (häufig)
-      services.push({k:"gh",freq:6, min:Math.round(annual*0.28/6)});      // Herbst: Laub, Winterfestmachung
+      const annual=Math.round(areaGa*1.7+900);         // Jahres-Gartenzeit, auf Saisons + Turnus verteilt
+      services.push({k:"rm",freq:20,min:Math.round(annual*0.42/20)});     // Rasen/Turnus mähen (1–2 Wochen) → HAUSWART
+      services.push({k:"gf",freq:5, min:Math.round(annual*0.20/5)});      // Frühling: Auspflanzen/Rückschnitt → Gärtner
+      services.push({k:"gs",freq:6, min:Math.round(annual*0.18/6)});      // Sommer: Bepflanzung/Unterhalt → Gärtner
+      services.push({k:"gh",freq:6, min:Math.round(annual*0.20/6)});      // Herbst: Laub/Winterfestmachung → Gärtner
       services.push({k:"th",freq:52,min:Math.round(40+r()*40)});          // Betreuung Umschwung
       services.push({k:"ur",freq:52,min:Math.round(70+r()*70),abend:false});
     }
@@ -1041,7 +1047,7 @@ function renderCalendar(t,wk){
       (wk.days[d]||[]).forEach(b=>{
         const yy=y(b.s), hh=Math.max(10,(b.e-b.s)/(ax1-ax0)*H);
         const drag=(b.oid&&!b.cov)?`draggable="true" data-oid="${b.oid}" style="cursor:grab;`:`style="`;
-        inner+=`<div class="blk ${b.cls}" ${drag}top:${yy}px;height:${hh}px;background:${b.col}" title="${(b.title||'').replace(/"/g,'')}">${b.label}<small>${b.sub||""}</small></div>`;
+        inner+=`<div class="blk ${b.cls}" ${drag}top:${yy}px;height:${hh}px;background:${b.col}" title="${esc(b.title||'')}">${esc(b.label)}<small>${esc(b.sub||"")}</small></div>`;
       });
     }
     const drvSum=isHoli?0:(wk.days[d]||[]).filter(b=>b.drive).reduce((a,b)=>a+(b.e-b.s)*60,0);
@@ -1116,14 +1122,14 @@ function renderObjekte(){
   let h=`<thead><tr><th>ID</th><th>Adresse</th><th>Ort</th><th>Typ</th><th>m² innen</th><th>Garten</th><th>Kunde</th><th>Arbeiten (h/J)</th><th>Tour</th><th></th></tr></thead><tbody>`;
   DATA.objs.forEach(o=>{
     const cur=DATA.tours.find(t=>t.objs.includes(o.id));
-    let sel=`<select data-obj="${o.id}">`;
+    let sel=`<select data-obj="${esc(o.id)}">`;
     EQUIPES.forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
     sel+=`</select>`;
     const arb=(o.services||[]).filter(s=>s.min>0).map(s=>SERVICE[s.k]?.label.split(" ")[0].slice(0,4)).join(", ")||"–";
     const hJ=Math.round((o.services||[]).reduce((a,s)=>a+s.freq*s.min/60,0));
-    h+=`<tr><td class="mono">${o.id}</td><td>${o.street}</td><td>${o.plz} ${o.ort}</td><td>${o.type}</td><td>${o.areaIn}</td><td>${o.areaGa||"–"}</td><td>${o.kunde}</td>
-      <td title="${arb}">${hJ} h</td><td>${sel}</td>
-      <td><button class="sm" data-settings="${o.id}" title="Arbeiten anpassen">⚙</button></td></tr>`;
+    h+=`<tr><td class="mono">${esc(o.id)}</td><td>${esc(o.street)}</td><td>${esc(o.plz)} ${esc(o.ort)}</td><td>${esc(o.type)}</td><td>${+o.areaIn||0}</td><td>${o.areaGa||"–"}</td><td>${esc(o.kunde)}</td>
+      <td title="${esc(arb)}">${hJ} h</td><td>${sel}</td>
+      <td><button class="sm" data-settings="${esc(o.id)}" title="Arbeiten anpassen">⚙</button></td></tr>`;
   });
   h+="</tbody>";tbl.innerHTML=h;
   $$("#objTable select").forEach(s=>s.onchange=()=>moveObj(s.dataset.obj,s.value));
@@ -1166,7 +1172,7 @@ function renderKunden(){
   const keys=Object.keys(map).sort();
   $("#kundenCount").textContent="("+keys.length+")";
   let h=`<thead><tr><th>Kunde</th><th>Ansprechperson</th><th>E-Mail</th><th>Tel.</th><th>Objekte</th></tr></thead><tbody>`;
-  keys.forEach(k=>{const o=map[k][0];h+=`<tr><td>${k}</td><td>${o.contact}</td><td>${o.email}</td><td class="mono">${o.tel}</td><td>${map[k].length}</td></tr>`;});
+  keys.forEach(k=>{const o=map[k][0];h+=`<tr><td>${esc(k)}</td><td>${esc(o.contact)}</td><td>${esc(o.email)}</td><td class="mono">${esc(o.tel)}</td><td>${map[k].length}</td></tr>`;});
   $("#kundenTable").innerHTML=h+"</tbody>";
 }
 
@@ -1221,7 +1227,7 @@ function renderStaff(){
     let opts=`<option value="" ${noTour?"selected":""}>— nicht eingeteilt —</option>`;
     EQUIPES.forEach(e=>{opts+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(x=>x.eq===e).map(x=>`<option ${x.id===s.tid?"selected":""}>${x.id}</option>`).join("")+"</optgroup>";});
     h+=`<tr${noTour?' style="background:rgba(240,147,43,.10)"':''}>
-      <td><input type="text" data-f="name" data-i="${i}" value="${s.name}" style="width:120px">${noTour?' <span title="nicht eingeteilt" style="color:var(--warn)">⚠</span>':''}</td>
+      <td><input type="text" data-f="name" data-i="${i}" value="${esc(s.name)}" style="width:120px">${noTour?' <span title="nicht eingeteilt" style="color:var(--warn)">⚠</span>':''}</td>
       <td><select data-f="tid" data-i="${i}">${opts}</select></td>
       <td>${t?t.objs.length:"–"}</td>
       <td><input type="number" data-f="bg" data-i="${i}" value="${s.bg}" style="width:56px"></td>
@@ -1265,35 +1271,78 @@ function renderBriefCfg(show){
 }
 
 /* ============ PDF ============ */
-function printCalendar(tid,von,bis){
-  const t=DATA.tours.find(x=>x.id===tid);if(!t)return;
-  von=clamp(von,1,52);bis=clamp(bis,von,52);
-  let pages="";
+const _hm=x=>String(Math.floor(x)).padStart(2,"0")+":"+String(Math.round((x%1)*60)).padStart(2,"0");
+// Deckblatt einer Tour (Übergabe an Toureninhaber/in): Kennzahlen + Objektliste des Mandats
+function tourCoverHtml(t){
+  const y=tourYear(t), tr=tourTravel(t);
+  const owners=(DATA.staff||[]).filter(s=>s.tid===t.id).map(s=>esc(s.name)).join(", ")||"<span style='color:#b45'>— nicht besetzt —</span>";
+  const objs=t.objs.map(objById).filter(Boolean);
+  const objRows=objs.map(o=>`<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">${esc(o.id)}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${esc(o.street)}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${esc(o.plz)} ${esc(o.ort)}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${esc(o.kunde)}</td></tr>`).join("")||`<tr><td colspan="4" style="padding:6px 8px;color:#888">keine Objekte</td></tr>`;
+  return `<section style="page-break-after:always;padding:12mm">
+    <div style="border-bottom:3px solid #2d5a8a;padding-bottom:8px;margin-bottom:16px">
+      <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#2d5a8a;font-weight:700">Tourenblatt · Übergabe</div>
+      <h1 style="font-size:30px;margin:4px 0 0">${esc(t.id)} · ${esc(tourLabel(t))}</h1>
+    </div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:16px">
+      <tr><td style="padding:4px 8px;color:#555;width:180px">Toureninhaber/in</td><td style="padding:4px 8px;font-weight:700">${owners}</td></tr>
+      <tr><td style="padding:4px 8px;color:#555">Equipe · Personen</td><td style="padding:4px 8px">${esc(tourLabel(t))} · ${t.persons}</td></tr>
+      <tr><td style="padding:4px 8px;color:#555">Fahrzeug · Briefing</td><td style="padding:4px 8px">${t.vehicle?"🚗 ja":"nein"} · ${t.briefing?"📋 ja":"nein"}</td></tr>
+      <tr><td style="padding:4px 8px;color:#555">Objekte</td><td style="padding:4px 8px">${objs.length}</td></tr>
+      <tr><td style="padding:4px 8px;color:#555">Ø-Auslastung · Spitze</td><td style="padding:4px 8px">${nf(y.avg)} % · ${nf(y.peak)} %</td></tr>
+      <tr><td style="padding:4px 8px;color:#555">Fahrtanteil · Weg/Woche</td><td style="padding:4px 8px">${nf(tr.share)} % · ${nf(tr.drive)} min</td></tr>
+    </table>
+    <div style="font-size:12px;font-weight:700;color:#2d5a8a;margin-bottom:4px">Objekte dieser Tour</div>
+    <table style="width:100%;font-size:11px;border-collapse:collapse">
+      <thead><tr style="background:#eef2f7"><th style="text-align:left;padding:4px 8px">ID</th><th style="text-align:left;padding:4px 8px">Adresse</th><th style="text-align:left;padding:4px 8px">Ort</th><th style="text-align:left;padding:4px 8px">Kunde</th></tr></thead>
+      <tbody>${objRows}</tbody>
+    </table>
+  </section>`;
+}
+// Wochenseiten einer Tour (KW von–bis) mit Uhrzeiten
+function tourWeekPagesHtml(t,von,bis){
+  const days=["Mo","Di","Mi","Do","Fr"]; let pages="";
   for(let w=von;w<=bis;w++){
     const cov=computeCoverage(w);const wk=buildWeek(t,w,cov);
-    const days=["Mo","Di","Mi","Do","Fr"];
     let body="";
-    if(wk.blocked){body=`<div style="padding:40px;text-align:center;font-size:20px">${wk.blocked}<br><span style="font-size:13px;color:#555">${wk.note||""}</span></div>`;}
+    if(wk.blocked){body=`<div style="padding:40px;text-align:center;font-size:20px">${wk.blocked}<br><span style="font-size:13px;color:#555">${esc(wk.note||"")}</span></div>`;}
     else{
       body='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">';
       for(let d=0;d<5;d++){
         const holi=wk.holiDays.has(d);
         body+=`<div style="border:1px solid #ccc;border-radius:4px;padding:4px;min-height:200px"><b>${days[d]}</b>`;
         if(holi)body+='<div style="color:#900">🎌 Feiertag</div>';
-        else (wk.days[d]||[]).forEach(b=>{body+=`<div style="background:${b.col};color:#06121c;border-radius:3px;padding:2px 4px;margin:2px 0;font-size:10px">${b.label}<br><span style="font-size:9px">${b.sub||""}</span></div>`;});
+        else (wk.days[d]||[]).forEach(b=>{const zeit=`${_hm(b.s)}–${_hm(b.e)}`;
+          body+=`<div style="background:${b.col};color:#06121c;border-radius:3px;padding:2px 4px;margin:2px 0;font-size:10px"><b>${zeit}</b> ${esc(b.label)}<br><span style="font-size:9px">${esc(b.sub||"")}</span></div>`;});
         body+="</div>";
       }
       body+="</div>";
     }
     pages+=`<section style="page-break-after:always;padding:6mm">
-      <h2 style="margin:0">Tour ${t.id} · ${tourLabel(t)}</h2>
+      <h2 style="margin:0">${esc(t.id)} · ${esc(tourLabel(t))}</h2>
       <div style="color:#555;margin-bottom:6px">KW ${w} / 2026 · ${t.persons} Person(en) · ${t.briefing?"Briefing an":"kein Briefing"}</div>${body}</section>`;
   }
+  return pages;
+}
+function openPrint(title,inner){
   const win=window.open("","_blank");
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Tourenblatt ${t.id}</title>
-    <style>@page{size:A4 landscape;margin:6mm}body{font:11px system-ui;margin:0;color:#111}h2{font-size:16px}</style></head>
-    <body onload="window.print()">${pages}</body></html>`);
+  if(!win){flash("⚠ Druck-Popup blockiert — bitte Popups für diese Seite erlauben");return;}
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <style>@page{size:A4 landscape;margin:6mm}body{font:11px system-ui;margin:0;color:#111}h1{margin:0}h2{font-size:16px}table{font-variant-numeric:tabular-nums}</style></head>
+    <body onload="window.print()">${inner}</body></html>`);
   win.document.close();
+}
+function printCalendar(tid,von,bis){
+  const t=DATA.tours.find(x=>x.id===tid);if(!t)return;
+  von=clamp(von,1,52);bis=clamp(bis,von,52);
+  openPrint("Tourenblatt "+t.id, tourCoverHtml(t)+tourWeekPagesHtml(t,von,bis));
+}
+// Sammeldruck: Deckblatt + Wochenseiten ALLER Touren in einem Dokument (für die Übergabe)
+function printAllTours(von,bis){
+  if(!DATA.tours.length){flash("Keine Touren zum Drucken");return;}
+  von=clamp(von,1,52);bis=clamp(bis,von,52);
+  const inner=DATA.tours.map(t=>tourCoverHtml(t)+tourWeekPagesHtml(t,von,bis)).join("");
+  openPrint("Tourenblätter (alle Touren)", inner);
+  flash("🖨 "+DATA.tours.length+" Tourenblätter erzeugt");
 }
 
 /* ============ Excel Vorlagen & Import (SheetJS) ============ */
@@ -1301,12 +1350,12 @@ function dl(wb,name){XLSX.writeFile(wb,name);}
 function tplObjekte(){
   const head=["Objekt-ID","Strasse","PLZ","Ort","Lat","Lon","Objekttyp","Fläche innen (m²)","Gartenfläche (m²)","Kunde","Ansprechperson","E-Mail","Tel. direkt","Tel. allgemein",
     "Unterhalt Freq/Jahr","Unterhalt Min","Unterhalt Equipe","Hauswart Freq/Jahr","Hauswart Min","Hauswart Equipe","Grundr. Freq/Jahr","Grundr. Min","Grundr. Equipe",
-    "Garten allg. Freq/Jahr","Garten allg. Min","Frühling Freq/Jahr","Frühling Min","Sommer Freq/Jahr","Sommer Min","Herbst Freq/Jahr","Herbst Min",
+    "Garten allg. Freq/Jahr","Garten allg. Min","Frühling Freq/Jahr","Frühling Min","Sommer Freq/Jahr","Sommer Min","Herbst Freq/Jahr","Herbst Min","Rasen/Turnus Freq/Jahr","Rasen/Turnus Min",
     "Spezial Freq/Jahr","Spezial Min","Spezial Equipe","Winterdienst (ja/nein)","Winterdienst Equipe","Monatspauschale CHF","Pauschale statt Stunden (ja/nein)","Bemerkungen"];
   const ex=["OBJ-201","Musterweg 1","8302","Kloten","47.45","8.58","Wohnüberbauung mit Umschwung","520","900","Muster AG","Fr. Muster","info@muster.ch","044 000 00 00","",
-    "52","40","Garten","12","30","Garten","4","90","Spezial","0","0","6","70","12","55","6","70","0","0","Spezial","ja","Garten","0","nein",""];
-  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-/Saisonarbeit→Garten, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
-    ["Garten-Saisons: Frühling KW10–21 · Sommer KW22–35 · Herbst KW36–47 · Winterdienst KW48–9. Werden automatisch in ihre Saison gelegt und geglättet."],
+    "52","40","Garten","12","30","Garten","4","90","Spezial","0","0","5","60","6","55","6","70","20","40","0","0","Spezial","ja","Garten","0","nein",""];
+  const info=[["Equipe je Arbeit: Hauswart | Garten | Abend | Spezial (leer = automatisch: Garten-/Saisonarbeit→Garten, Rasen/Turnus→Hauswart, Grund-/Spezialreinigung→Spezial, sonst Hauswart)."],
+    ["Garten-Saisons: Frühling KW10–21 · Sommer KW22–35 · Herbst KW36–47 · Winterdienst KW48–9. Rasen/Turnus (1–2-Wochen-Mähen) läuft Mrz–Nov und geht an den Hauswart. Alles automatisch in Saison gelegt + geglättet."],
     ["Spezialreinigung = flexible Equipe: Grund-/Zwischen-/Spezialreinigungen + deckt Hauswart-/Abend-Touren bei Ferien/Krankheit ab (kein Garten)."],
     ["Pauschale statt Stunden = ja → Umsatz dieses Objekts = Monatspauschale × 12 (statt Stunden × Ansatz)."]];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head,ex]),"Objekte");
@@ -1337,11 +1386,14 @@ function rowToObj(r){
   const gaF=+g("Garten allg. Freq/Jahr","Garten Freq/Jahr")||0, gaM=+g("Garten allg. Min","Garten Min")||0;
   if(gaF>0&&gaM>0) services.push({k:"ga",freq:gaF,min:gaM,eq:"garten"});
   [["gf","Frühling"],["gs","Sommer"],["gh","Herbst"]].forEach(([k,lbl])=>{const f=+g(lbl+" Freq/Jahr")||0,m=+g(lbl+" Min")||0;if(f>0&&m>0)services.push({k,freq:f,min:m,eq:"garten"});});
-  // Fallback: Gartenfläche vorhanden, aber keine Garten-Arbeit angegeben → automatisch auf Saisons verteilen
-  if(!services.some(s=>["ga","gf","gs","gh"].includes(s.k)) && areaGa>0){ const an=Math.round(areaGa*1.6+800);
-    services.push({k:"gf",freq:6,min:Math.round(an*0.28/6),eq:"garten"});
-    services.push({k:"gs",freq:12,min:Math.round(an*0.44/12),eq:"garten"});
-    services.push({k:"gh",freq:6,min:Math.round(an*0.28/6),eq:"garten"}); }
+  const rmF=+g("Rasen/Turnus Freq/Jahr")||0, rmM=+g("Rasen/Turnus Min")||0;
+  if(rmF>0&&rmM>0) services.push({k:"rm",freq:rmF,min:rmM});                 // → serviceEq: Hauswart
+  // Fallback: Gartenfläche vorhanden, aber keine Garten-Arbeit angegeben → automatisch verteilen (Rasen/Turnus→Hauswart, Saison→Gärtner)
+  if(!services.some(s=>["ga","gf","gs","gh","rm"].includes(s.k)) && areaGa>0){ const an=Math.round(areaGa*1.6+800);
+    services.push({k:"rm",freq:20,min:Math.round(an*0.42/20)});
+    services.push({k:"gf",freq:5,min:Math.round(an*0.20/5),eq:"garten"});
+    services.push({k:"gs",freq:6,min:Math.round(an*0.18/6),eq:"garten"});
+    services.push({k:"gh",freq:6,min:Math.round(an*0.20/6),eq:"garten"}); }
   const spF=+g("Spezial Freq/Jahr")||0, spM=+g("Spezial Min")||0;
   if(spF>0&&spM>0) services.push({k:"sp",freq:spF,min:spM,eq:eqParse(g("Spezial Equipe"))||"spezial"});
   const win=/ja|1|x|wahr/i.test(String(g("Winterdienst (ja/nein)")));if(win)services.push({k:"win",freq:8,min:45,eq:eqParse(g("Winterdienst Equipe"))||"garten"});
@@ -1361,7 +1413,8 @@ function eqOf(o){
 // Equipe EINER Arbeit/Dienstleistung (per-service). Explizit via s.eq, sonst sinnvoller Default.
 function serviceEq(o,s){
   if(EQUIPES.includes(s.eq)) return s.eq;          // explizit gesetzt gewinnt
-  if(["ga","gf","gs","gh"].includes(s.k)) return "garten";   // Gartenunterhalt + Saisons (Frühling/Sommer/Herbst) → Gärtner
+  if(s.k==="rm") return "tag";                       // Rasen/Turnus-Gartenarbeit (1–2-Wochen, z.B. Mähen) → Hauswart
+  if(["ga","gf","gs","gh"].includes(s.k)) return "garten";   // übrige Garten-/Saisonarbeit → Gärtner
   if(s.k==="win") return "garten";                  // Winterdienst → Gärtner (Winter-Saisonarbeit der Gartenequipe)
   if(s.k==="gr"||s.k==="sp") return "spezial";      // Grund-/Spezial-/Zwischenreinigung → Spezialequipe
   if(s.k==="ur"&&s.abend) return "abend";           // Abend-Unterhaltsreinigung
@@ -1449,7 +1502,7 @@ function applyKunden(rows){
 }
 
 /* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
-const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
+const SVCLIST=[["ur","Unterhaltsreinigung"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["rm","Rasen/Turnus mähen"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
 function openObjModal(id){
   const o=objById(id); if(!o)return;
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
@@ -1460,8 +1513,8 @@ function openObjModal(id){
       <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:70px"></td>
       <td class="n"><select id="m_eq_${k}" style="width:92px">${eqOpt(seq)}</select></td></tr>`;}).join("");
   $("#objModalBox").innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${o.id} · ${o.street}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
-    <div class="muted" style="font-size:12px">${o.plz} ${o.ort} · ${o.kunde} · ${o.type}</div>
+    <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${esc(o.id)} · ${esc(o.street)}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
+    <div class="muted" style="font-size:12px">${esc(o.plz)} ${esc(o.ort)} · ${esc(o.kunde)} · ${esc(o.type)}</div>
     <div class="toolbar">
       <label class="chk">Fläche m² <input type="number" id="m_areaIn" value="${o.areaIn||0}" style="width:80px"></label>
       <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label></div>
@@ -1494,7 +1547,9 @@ function saveObjModal(id){
 }
 
 /* ============ Persistenz: localStorage + GitHub ============ */
-function persist(){invalidateSchedule();try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
+function persist(){invalidateSchedule();
+  try{ DATA.calc=costs(); }catch(e){ DATA.calc=null; }   // echter Kostenschnappschuss (auf Basis der Ist-Auslastung) → Cockpit nutzt DENSELBEN Wert (einheitliche P&L)
+  try{localStorage.setItem("wsg_plan_v4",JSON.stringify(DATA));}catch(e){}
   try{window.parent&&window.parent!==window&&window.parent.postMessage({wsgDataChanged:1},"*");}catch(e){}}
 // Leerer Plan: was die App zeigt, wenn KEIN Token und KEIN lokaler Stand vorhanden ist
 function emptyPlan(){return {objs:[],tours:[],wages:{...WAGES_DEF},social:SOCIAL_DEF,fzkost:FZKOST_DEF,briefing:{...BRIEF},staff:[],ratio:10};}
@@ -1637,6 +1692,7 @@ function wire(){
   $("#btnEmptyDemoRepo").onclick=demoToRepo;
   $("#btnEmptyDl").onclick=downloadDemo;
   $("#btnPdf").onclick=()=>printCalendar(curTour,+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
+  $("#btnPdfAll").onclick=()=>printAllTours(+$("#pdfFrom").value||curKW,+$("#pdfTo").value||Math.min(52,curKW+3));
   let briefShown=false;$("#btnBrief").onclick=()=>{briefShown=!briefShown;renderBriefCfg(briefShown);};
   $("#btnTplObj").onclick=tplObjekte;
   $("#fileAppend").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],appendObjects);e.target.value="";};
@@ -1655,8 +1711,10 @@ function wire(){
   $("#btnTplKunden").onclick=tplKunden;
   $("#fileKunden").onchange=e=>{if(e.target.files[0])parseFile(e.target.files[0],applyKunden);e.target.value="";};
   $("#fzkost").value=DATA.fzkost;
-  // postMessage vom Dashboard
-  window.addEventListener("message",ev=>{const d=ev.data||{};
+  // postMessage vom Dashboard — nur von der EIGENEN Origin akzeptieren (schützt vor fremden Einbettungen)
+  window.addEventListener("message",ev=>{
+    if(ev.origin!==location.origin) return;   // fremde Origins (andere Seiten, die die App einbetten) ignorieren
+    const d=ev.data||{};
     if(d.wsgView)setView(d.wsgView);
     if(d.wsgSave)ghSavePlan();
     if(d.wsgLoad)ghLoadPlan();

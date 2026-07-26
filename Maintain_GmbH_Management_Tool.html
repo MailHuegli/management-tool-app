@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
 <title>Dashboard</title>
 <style>
 :root{
@@ -138,7 +139,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726o#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260726s#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -153,7 +154,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
   <section class="pane" data-tab="github">
     <div class="card">
       <h3>GitHub-Sync (privates Repo)</h3>
-      <div class="muted" style="font-size:12px">Fine-grained PAT mit <b>Contents: Read &amp; Write</b>. Nur im Browser (localStorage <code>maintain_github</code>) gespeichert — nie in eine Datei committen.</div>
+      <div class="muted" style="font-size:12px">Fine-grained PAT, <b>nur dieses eine private Repo</b>, Recht <b>Contents: Read &amp; Write</b>, mit <b>Ablaufdatum</b> (z.&nbsp;B. 90 Tage) und regelmässig erneuern. Nur im Browser (localStorage <code>maintain_github</code>) gespeichert — nie in eine Datei committen. Auf geteilten Geräten nach Gebrauch löschen.</div>
       <div class="grid2" style="margin-top:8px">
         <div class="field"><label>Personal Access Token</label><input type="password" id="ghToken" style="width:100%" placeholder="github_pat_…"></div>
         <div class="field"><label>Owner</label><input type="text" id="ghOwner" placeholder="MailHuegli"></div>
@@ -179,10 +180,10 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
 </div>
 
-<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26o</b></div>
+<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-26s</b></div>
 <div class="flash" id="flash"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="xlsx.full.min.js"></script>
 <script>
 "use strict";
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -201,14 +202,14 @@ let curTab="uebersicht", frameReady=false;
 
 /* ---- Leistungskatalog (8 Bündel, Marktbänder CHF/h) ---- */
 const CATALOG=[
-  ["ur","Unterhaltsreinigung",[38,52],45],
-  ["gr","Grundreinigung",[45,65],55],
-  ["th","Technischer Hauswart",[70,95],82],
-  ["bs","Brandschutz/Kontrolle",[85,120],98],
-  ["ga","Gartenunterhalt",[65,88],75],
-  ["win","Winterdienst",[75,110],90],
-  ["hw","Hauswartung (pauschal)",[60,85],70],
-  ["obj","Objektbetreuung",[55,78],66]
+  ["ur","Unterhaltsreinigung",[38,58],52],
+  ["gr","Grundreinigung",[45,72],65],
+  ["th","Technischer Hauswart",[70,95],85],
+  ["bs","Brandschutz/Kontrolle",[85,120],105],
+  ["ga","Gartenunterhalt",[65,95],88],
+  ["win","Winterdienst",[75,110],100],
+  ["hw","Hauswartung (pauschal)",[60,85],78],
+  ["obj","Objektbetreuung",[55,78],72]
 ];
 const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],admin:[5500,7200]};
 
@@ -253,8 +254,9 @@ function calcRev(m){ // Umsatz kalkuliert = verrechenbare Jahresstunden (Tourenp
 function calcCost(m){ // Kosten kalkuliert aus dem Tourenplan (Personal/Fahrzeuge/Verwaltung); Rest 0 bis überschrieben
   const o=readTourPlan();
   if(!o) return {personal:0,gf:0,fahrzeug:0,material:0,winter:0,verwaltung:0,abschreibung:0,sonstige:0};
+  const verw = (o.verwaltung!=null) ? o.verwaltung : o.admin*o.adminWage*13*o.soc;
   return {personal:o.personal, gf:0, fahrzeug:o.fzTotal, material:0, winter:0,
-    verwaltung:o.admin*o.adminWage*13*o.soc, abschreibung:0, sonstige:0};
+    verwaltung:verw, abschreibung:0, sonstige:0};
 }
 function base(m){
   const cr=calcRev(m), cc=calcCost(m), over=m.over||{};
@@ -389,12 +391,20 @@ function readTourPlan(){
     const bh={ur:0,th:0,gr:0,ga:0,win:0}; let pausch=0;
     d.objs.forEach(o=>{
       if(o.pauschOn){ pausch+=(+o.pauschMt||0)*12; return; }   // Pauschale statt Stunden → keine verrechenbaren Stunden
-      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':(['gf','gs','gh'].includes(sv.k)?'ga':sv.k); if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialr.→Grund; Garten-Saisons→Garten
+      (o.services||[]).forEach(sv=>{const k=(sv.k==='sp')?'gr':(['gf','gs','gh','rm'].includes(sv.k)?'ga':sv.k); if(bh[k]!==undefined)bh[k]+=(sv.min*sv.freq)/60;});  // Spezialr.→Grund; Garten-Saisons+Rasen/Turnus→Garten
     });
-    // grobe FTE/Personalkosten je Equipe (Abend/Garten sind Teilzeit/saisonal; Detail lebt in der Tourenplanung)
+    const fieldHeads=(d.tours||[]).reduce((a,t)=>a+(t.persons||0),0);
+    // EINHEITLICHE P&L: wenn die Tourenplanung ihren echten Kostenschnappschuss (d.calc, auf Ist-Auslastung) mitliefert → diesen nutzen.
+    if(d.calc && typeof d.calc.fieldCost==="number"){
+      return {tours:(d.tours||[]).length,objs:d.objs.length,
+        fte:d.calc.fte, personal:d.calc.fieldCost, vehicles:d.calc.vehicles, fzTotal:d.calc.fzTotal,
+        fieldHeads, admin:d.calc.admin, adminWage:(d.wages?.admin||6300), verwaltung:d.calc.adminCost,
+        soc, billable:bh, pausch};
+    }
+    // Fallback (Alt-Daten ohne Schnappschuss): grobe FTE/Personalkosten je Equipe über feste Faktoren
     const GR={tag:0.85,garten:0.50,abend:0.45,spezial:0.70};
-    let fte=0,personal=0,fieldHeads=0;
-    (d.tours||[]).forEach(t=>{const grade=GR[t.eq]||0.7; fte+=t.persons*grade; fieldHeads+=t.persons;
+    let fte=0,personal=0;
+    (d.tours||[]).forEach(t=>{const grade=GR[t.eq]||0.7; fte+=t.persons*grade;
       personal+=(d.wages?.[t.eq]||5000)*t.persons*grade*13*soc;});
     const vehicles=(d.tours||[]).filter(t=>t.vehicle).length;
     const fzTotal=vehicles*(d.fzkost||8000);
@@ -649,7 +659,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html?v=20260726o#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260726s#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();
@@ -685,8 +695,8 @@ function wire(){
     const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="cockpit-data.json";a.click();};
   $("#btnReset").onclick=()=>{if(confirm("Cockpit leeren? Alle lokalen Zahlen werden entfernt.")){M=structuredClone(DEF);save();renderActive();status("📭 leer");flash("Geleert");}};
   $("#btnDemo").onclick=loadDemoCockpit;
-  // iframe ready + save-Rückmeldung
-  window.addEventListener("message",ev=>{const d=ev.data||{};
+  // iframe ready + save-Rückmeldung — nur eigene Origin
+  window.addEventListener("message",ev=>{ if(ev.origin!==location.origin) return; const d=ev.data||{};
     if(d.wsgReady){frameReady=true; if(PLANTABS.includes(curTab))setPlanView(PLANVIEWS[curTab]); if(gh().token)tellFrameLoad(); renderActive();}
     if(d.wsgDataChanged){renderActive();}   // Tourenplan geändert → Umsatz/Kosten neu berechnen
     if(d.wsgSaved)status("✅ Tourenplan gespeichert");});
