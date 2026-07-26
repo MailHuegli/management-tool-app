@@ -297,7 +297,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-26z</b></div>
+<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-27a</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -684,11 +684,20 @@ function planSummary(){
   const staffUnassigned=staff.filter(s=>!s.tid||!assigned(s.tid)).length;
   const understaffed=DATA.tours.filter(t=>staff.filter(s=>s.tid===t.id).length<t.persons).length;
   const kunden=new Set(DATA.objs.map(o=>o.kunde)).size;
-  // Umsatz je Kategorie: Pauschale-Objekte → Pauschale×12; sonst je Arbeit Jahresstunden × (Objekt-Satz ?? globaler Ansatz)
+  // Umsatz je Kategorie. Pauschale-Objekte: Pauschale×12 wird auf die ECHTEN Kategorien verteilt (nach Wert-Mix
+  // der Arbeiten = Std × Ansatz), NICHT nach "Übriges". Nur Objekte ganz ohne Arbeiten landen in pausch/Übriges.
   const REVCAT={ur:"ur",ura:"ur",urm:"ur",th:"th",gr:"gr",sp:"gr",ga:"garten",gf:"garten",gs:"garten",gh:"garten",rm:"garten",win:"winter"};
   const rev={ur:0,th:0,gr:0,garten:0,winter:0,pausch:0};
   DATA.objs.forEach(o=>{
-    if(o.pauschOn){ rev.pausch += (+o.pauschMt||0)*12; return; }
+    if(o.pauschOn){
+      const annual=(+o.pauschMt||0)*12;
+      const parts={}; let tot=0;
+      (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]; if(!cat) return;
+        const w=(s.freq||0)*(s.min||0)/60*rateOf(s); if(w>0){ parts[cat]=(parts[cat]||0)+w; tot+=w; } });
+      if(tot>0){ for(const cat in parts){ rev[cat]+=annual*parts[cat]/tot; } }
+      else { rev.pausch += annual; }   // Objekt ohne Arbeiten → echtes "Übriges"
+      return;
+    }
     (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]; if(!cat) return;
       rev[cat] += (s.freq||0)*(s.min||0)/60 * rateOf(s); });
   });
