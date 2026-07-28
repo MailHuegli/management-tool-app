@@ -68,6 +68,7 @@ tr:hover td{background:var(--panel2)}
 .blk{position:absolute;left:2px;right:2px;border-radius:4px;padding:2px 4px;font-size:10px;overflow:hidden;color:#06121c;border:1px solid rgba(0,0,0,.15)}
 .blk small{display:block;opacity:.85;font-size:9px;line-height:1.15}
 .blk.drive{background:repeating-linear-gradient(45deg,#8a94a6,#8a94a6 5px,#7d8798 5px,#7d8798 10px)!important;color:#0d1520;font-style:italic;border:1px dashed rgba(0,0,0,.35);opacity:.9}
+.blk.fix{border:2px solid #0d1520;box-shadow:inset 3px 0 0 rgba(0,0,0,.55)}
 .normline{position:absolute;left:0;right:0;border-top:1px dashed var(--bad);pointer-events:none}
 .normline span{position:absolute;left:2px;top:-11px;font-size:9px;color:var(--bad)}
 .strip{display:flex;gap:1px;margin-top:6px}
@@ -297,7 +298,7 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-27a</b></div>
+<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-27b</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
@@ -339,6 +340,15 @@ const RATES_DEF={ur:52,ura:52,urm:52,th:85,gr:65,ga:88,gf:88,gs:88,gh:88,rm:78,w
 const TURNUS=[["woche",52,"wöchentlich"],["2woche",26,"14-täglich"],["monat",12,"monatlich"],["2monat",6,"2-monatlich"],["quartal",4,"quartalsweise"],["halb",2,"halbjährlich"],["jahr",1,"jährlich"],["bedarf",0,"nach Bedarf"]];
 function freqToTurnus(f){const m=TURNUS.find(t=>t[1]===+f);return m?m[0]:"indiv";}
 function rateOf(s){ return (+s.rate>0)?+s.rate:((DATA.rates&&DATA.rates[s.k])||RATES_DEF[s.k]||0); }
+// --- Helfer für fixe & manuelle (Custom-)Dienstleistungen ---
+const WD_NAMES=["Mo","Di","Mi","Do","Fr"];
+function hm2h(s){ const p=String(s||"07:00").split(":"); return (+p[0]||0)+(+p[1]||0)/60; }
+function h2hm(h){ const hh=Math.floor(h), mm=Math.round((h-hh)*60); return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
+function svcLabel(s){ return s.label || (SERVICE[s.k]&&SERVICE[s.k].label) || s.k; }
+function svcColor(s){ return (SERVICE[s.k]&&SERVICE[s.k].col) || s.col || "#7a8aa0"; }
+function dateToKW(str){ const d=new Date(str); if(isNaN(d)) return 1; const on=new Date(d.getFullYear(),0,1); return clamp(Math.ceil((((d-on)/86400000)+on.getDay()+1)/7),1,52); }
+// Umsatzkategorie: Standard über REVCAT, Custom-Dienste über ihre Equipe
+function revCatByEq(eq){ return eq==="garten"?"garten":(eq==="spezial"?"gr":(eq==="abend"||eq==="morgen"?"ur":"th")); }
 const WAGE_BANDS={tag:[4800,6500],garten:[4700,5900],abend:[4000,4900],spezial:[4600,6000],morgen:[4000,4900],admin:[5500,7200]};
 const EQ={tag:{label:"Hauswart / Tagschicht",short:"H",cls:"tag",win:[7.5,21],work:[7.5,17]},
           garten:{label:"Gartenequipe",short:"G",cls:"garten",win:[7.5,21],work:[7.5,17]},
@@ -534,6 +544,16 @@ function tourSchedule(t){
       if(!(s.min>0) || !(s.freq>0)) return;
       const elig=eligibleWeeks(s.k);
       if(!elig.length) return;
+      if(s.fixed){                                       // FIX: fester Wochentag+Zeit im Turnus ab Startdatum
+        const iv=Math.max(1,Math.round(52/Math.max(1,s.freq)));
+        const day=clamp(+s.day||1,1,5), from=s.from||"07:00", to=s.to||h2hm(hm2h(s.from||"07:00")+(s.min||60)/60);
+        let placed=0, kw=s.start?dateToKW(s.start):1, guard=0;
+        while(placed<s.freq && guard++<70){
+          if(kw>=1 && kw<=52 && inSeason(s.k,kw)){ weekMin[kw]+=s.min; weekItems[kw].push({oid:o.id,k:s.k,min:s.min,fixed:true,day,from,to,label:s.label,col:s.col}); placed++; }
+          kw+=iv; if(kw>52) kw-=52;
+        }
+        return;
+      }
       if(s.freq>=52 || s.freq>=elig.length){             // (nahezu) jede zulässige Woche
         elig.forEach(kw=>{ weekMin[kw]+=s.min; weekItems[kw].push({oid:o.id,k:s.k,min:s.min}); });
       } else {
@@ -692,13 +712,13 @@ function planSummary(){
     if(o.pauschOn){
       const annual=(+o.pauschMt||0)*12;
       const parts={}; let tot=0;
-      (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]; if(!cat) return;
+      (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]||revCatByEq(serviceEq(o,s)); if(!cat) return;
         const w=(s.freq||0)*(s.min||0)/60*rateOf(s); if(w>0){ parts[cat]=(parts[cat]||0)+w; tot+=w; } });
       if(tot>0){ for(const cat in parts){ rev[cat]+=annual*parts[cat]/tot; } }
       else { rev.pausch += annual; }   // Objekt ohne Arbeiten → echtes "Übriges"
       return;
     }
-    (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]; if(!cat) return;
+    (o.services||[]).forEach(s=>{ const cat=REVCAT[s.k]||revCatByEq(serviceEq(o,s)); if(!cat) return;
       rev[cat] += (s.freq||0)*(s.min||0)/60 * rateOf(s); });
   });
   const revenue=Object.values(rev).reduce((a,x)=>a+x,0);
@@ -733,7 +753,13 @@ function buildWeek(t,kw,cov){
   const avail=t.persons-absentPersons(t,kw);
   if(avail<=0){ return {blocked:"🏖 Ferien",note:distribNote(t,kw,cov)}; }
   // Objekte dieser Woche aus dem GEGLÄTTETEN Fahrplan + übernommene Ferienabdeckung
-  const wmap=tourWeekObjMap(t,kw);
+  const raw=(tourSchedule(t).weekItems[kw]||[]);
+  const wmap={}; raw.forEach(it=>{ if(it.fixed) return; wmap[it.oid]=(wmap[it.oid]||0)+it.min; });   // freie Arbeit (ohne fixe)
+  // fixe Dienstleistungen dieser Woche → je Werktag pinnen (Wochentag + Zeitfenster)
+  const fixedByDay=[[],[],[],[],[]];
+  raw.filter(it=>it.fixed && +it.day>=1 && +it.day<=5).forEach(it=>{ const o=objById(it.oid); const d=clamp(+it.day,1,5)-1;
+    const from=hm2h(it.from||"07:00"), to=hm2h(it.to||h2hm(from+(it.min||30)/60));
+    fixedByDay[d].push({s:from,e:to,min:(to-from)*60,oid:it.oid,label:(o?o.id:it.oid),sub:svcLabel(it),col:svcColor(it)}); });
   const order=nnOrder(Object.keys(wmap).map(objById).filter(Boolean));
   const taken=(cov&&cov[t.id]?.taken)||[];
   const items=[];
@@ -768,9 +794,16 @@ function buildWeek(t,kw,cov){
       else               breaks.push([bs,be]);         // Briefing mitten am Tag → Arbeit drumherum
     }
     breaks.sort((a,b)=>a[0]-b[0]);
+    // FIXE Dienstleistungen dieses Werktags pinnen (Wochentag + Zeitfenster); freie Arbeit füllt drumherum
+    let fixedMin=0;
+    (fixedByDay[d]||[]).forEach(fb=>{
+      days[d].push({s:fb.s,e:fb.e,oid:fb.oid,label:"📌 "+fb.label,sub:fb.sub,title:fb.sub+" · fix eingeplant",col:fb.col,cls:"fix"});
+      breaks.push([fb.s,fb.e]); fixedMin+=fb.min; dayEnd=Math.max(dayEnd, fb.e);   // fixer Block darf über das Normende hinaus
+    });
+    breaks.sort((a,b)=>a[0]-b[0]);
     // verfügbare Arbeitsminuten im Zeitfenster [dayStart,dayEnd] abzüglich Pausen → begrenzt die Tages-Last
     let windowMin=(dayEnd-dayStart)*60; breaks.forEach(br=>{const a=Math.max(br[0],dayStart),b=Math.min(br[1],dayEnd); if(b>a) windowMin-=(b-a)*60;});
-    let cursor=dayStart, filled=0; const limit=Math.min(perDayLimit[i], windowMin); let firstOfDay=true;
+    let cursor=dayStart, filled=fixedMin; const limit=Math.min(perDayLimit[i]+fixedMin, windowMin+fixedMin); let firstOfDay=true;
     while(queue.length && filled< limit-0.5){
       const ch=queue[0];
       // Kein Weg zum ERSTEN Objekt des Tages: Anfahrt/Tageswechsel zählt nicht → führenden Fahrt-Chunk überspringen
@@ -1230,7 +1263,7 @@ function renderObjekte(){
     let sel=`<select data-obj="${esc(o.id)}">`;
     EQUIPES.forEach(e=>{sel+=`<optgroup label="${EQ[e].label.split(' ')[0]}">`+DATA.tours.filter(t=>t.eq===e).map(t=>`<option value="${t.id}" ${cur&&cur.id===t.id?"selected":""}>${t.id}</option>`).join("")+`</optgroup>`;});
     sel+=`</select>`;
-    const arb=(o.services||[]).filter(s=>s.min>0).map(s=>SERVICE[s.k]?.label.split(" ")[0].slice(0,4)).join(", ")||"–";
+    const arb=(o.services||[]).filter(s=>s.min>0).map(s=>svcLabel(s).split(" ")[0].slice(0,6)).join(", ")||"–";
     const hJ=Math.round((o.services||[]).reduce((a,s)=>a+s.freq*s.min/60,0));
     h+=`<tr><td class="mono">${esc(o.id)}</td><td>${esc(o.street)}</td><td>${esc(o.plz)} ${esc(o.ort)}</td><td>${esc(o.type)}</td><td>${+o.areaIn||0}</td><td>${o.areaGa||"–"}</td><td>${esc(o.kunde)}</td>
       <td title="${esc(arb)}">${hJ} h</td><td>${sel}</td>
@@ -1641,6 +1674,7 @@ function applyKunden(rows){
 
 /* ============ Objekt-Settings-Modal (Arbeiten je Objekt anpassen) ============ */
 const SVCLIST=[["ur","UR Tour (Hauswart)"],["ura","UR Abend"],["urm","UR Morgen"],["th","Techn. Hauswart"],["gr","Grundreinigung"],["ga","Gartenunterhalt (allg.)"],["gf","Garten Frühling"],["gs","Garten Sommer"],["gh","Garten Herbst"],["rm","Rasen/Turnus mähen"],["win","Winterdienst"],["sp","Spezial-/Zwischenreinigung"]];
+let MROWS=[], MOBJ=null;   // dynamische Dienstleistungs-Zeilen im Objekt-Modal (Standard + Custom)
 function openObjModal(id){
   const o=objById(id); if(!o)return;
   const svc=k=>o.services.find(s=>s.k===k)||{freq:0,min:0};
@@ -1649,13 +1683,13 @@ function openObjModal(id){
   const turnOpt=(f)=>{const cur=freqToTurnus(f);
     return TURNUS.map(([v,fr,lb])=>`<option value="${v}" data-f="${fr}" ${cur===v?"selected":""}>${lb}</option>`).join("")
       +`<option value="indiv" ${cur==="indiv"?"selected":""}>individuell</option>`;};
-  const rows=SVCLIST.map(([k,l])=>{const s=svc(k); const seq=serviceEq(o,{k,eq:s.eq,abend:s.abend});
-    return `<tr><td><span class="clbl" style="background:${SERVICE[k].col}"></span>${l}</td>
-      <td><select id="m_turnus_${k}" style="width:112px">${turnOpt(s.freq||0)}</select></td>
-      <td class="n"><input type="number" id="m_freq_${k}" value="${s.freq||0}" min="0" style="width:52px"></td>
-      <td class="n"><input type="number" id="m_min_${k}" value="${Math.round(s.min||0)}" min="0" style="width:60px"></td>
-      <td class="n"><input type="number" id="m_rate_${k}" value="${(+s.rate>0)?s.rate:''}" placeholder="${gRate(k)}" min="0" title="Ansatz CHF/h · leer = Standard ${gRate(k)}" style="width:58px"></td>
-      <td class="n"><select id="m_eq_${k}" style="width:86px">${eqOpt(seq)}</select></td></tr>`;}).join("");
+  MOBJ=o;
+  MROWS=SVCLIST.map(([k,label])=>{ const s=svc(k);
+    return {k,label,custom:false,freq:+s.freq||0,min:Math.round(+s.min||0),rate:(+s.rate>0?+s.rate:''),
+      eq:serviceEq(o,{k,eq:s.eq}),fixed:!!s.fixed,day:+s.day||1,from:s.from||'07:00',to:s.to||'',start:s.start||''}; });
+  (o.services||[]).filter(s=>s.custom).forEach(s=>MROWS.push({k:s.k,label:s.label||'Neue Leistung',custom:true,
+    freq:+s.freq||0,min:Math.round(+s.min||0),rate:(+s.rate>0?+s.rate:''),eq:s.eq||'tag',
+    fixed:!!s.fixed,day:+s.day||1,from:s.from||'07:00',to:s.to||'',start:s.start||''}));
   const winActive=(svc('win').freq>0 && svc('win').min>0);
   $("#objModalBox").innerHTML=`
     <div style="display:flex;align-items:center;gap:8px"><h3 style="margin:0">${esc(o.id)} · ${esc(o.street)}</h3><span class="sp" style="flex:1"></span><button class="sm" id="objModalClose">✕</button></div>
@@ -1664,38 +1698,94 @@ function openObjModal(id){
       <label class="chk">Fläche m² <input type="number" id="m_areaIn" value="${o.areaIn||0}" style="width:80px"></label>
       <label class="chk">Garten m² <input type="number" id="m_areaGa" value="${o.areaGa||0}" style="width:80px"></label>
       <label class="chk"><input type="checkbox" id="m_winOn" ${winActive?"checked":""}> ❄ Winterdienst aktiv</label></div>
-    <table><thead><tr><th>Arbeit</th><th>Turnus</th><th class="n">Freq/J</th><th class="n">Dauer&nbsp;min</th><th class="n">Satz&nbsp;CHF/h</th><th class="n">Equipe</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:6px">Turnus setzt die Frequenz/Jahr (bei „individuell" Zahl frei eintragen). Dauer 0 = Leistung entfällt. Satz leer = globaler Ansatz (grau). Equipe je Arbeit frei wählbar.</div>
+    <table><thead><tr><th>Arbeit</th><th>Turnus</th><th class="n">Freq/J</th><th class="n">Dauer&nbsp;min</th><th class="n">Satz&nbsp;CHF/h</th><th>Equipe</th><th class="n">📌</th></tr></thead><tbody id="m_tbody"></tbody></table>
+    <div class="toolbar" style="margin-top:4px"><button class="sm" id="m_add">➕ Dienstleistung hinzufügen</button>
+      <span class="muted" style="font-size:12px">📌 <b>fix</b> = fester Wochentag + Zeit im Turnus ab Startdatum · leer = freie Planung. Dauer 0 = entfällt. Satz leer = globaler Ansatz.</span></div>
     <div class="toolbar" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
       <label class="chk">Monatspauschale CHF <input type="number" id="m_pausch" value="${o.pauschMt||0}" min="0" style="width:100px"></label>
       <label class="chk"><input type="checkbox" id="m_pauschOn" ${o.pauschOn?"checked":""}> Umsatz = Pauschale (statt Stunden × Ansatz)</label></div>
     <div class="toolbar" style="justify-content:space-between"><button class="sm" id="objModalDelete" style="color:#e74c3c;border-color:#e74c3c">🗑 Objekt löschen</button><span><button class="sm" id="objModalCancel">Abbrechen</button> <button class="sm primary" id="objModalSave">Speichern</button></span></div>`;
   $("#objModal").classList.add("on");
-  // Turnus-Dropdowns setzen die Frequenz; Frequenz-Eingabe aktualisiert das Dropdown
-  const syncWin=()=>{const w=$("#m_winOn"); if(w) w.checked=(+$("#m_freq_win").value>0 && +$("#m_min_win").value>0);};
-  SVCLIST.forEach(([k])=>{
-    const ts=$("#m_turnus_"+k), fi=$("#m_freq_"+k), mi=$("#m_min_"+k);
-    if(ts&&fi){ ts.onchange=()=>{ if(ts.value!=="indiv"){ fi.value=ts.selectedOptions[0].dataset.f; } if(k==="win")syncWin(); };
-      fi.onchange=()=>{ ts.value=freqToTurnus(+fi.value); if(k==="win")syncWin(); }; }
-    if(mi&&k==="win") mi.onchange=syncWin;
-  });
+  renderMRows();
+  $("#m_add").onclick=()=>{ collectMRows(); MROWS.push({k:'c'+Date.now().toString(36)+Math.floor(Math.random()*1e3),label:'Neue Leistung',custom:true,freq:12,min:60,rate:'',eq:'tag',fixed:false,day:1,from:'07:00',to:'',start:''}); renderMRows(); };
   const wchk=$("#m_winOn");
-  if(wchk) wchk.onchange=()=>{
-    if(wchk.checked){ if(+$("#m_freq_win").value<=0){ $("#m_freq_win").value=8; $("#m_turnus_win").value="indiv"; } if(+$("#m_min_win").value<=0) $("#m_min_win").value=45; }
-    else { $("#m_freq_win").value=0; $("#m_min_win").value=0; $("#m_turnus_win").value="bedarf"; } };
+  if(wchk) wchk.onchange=()=>{ collectMRows(); const wr=MROWS.find(r=>r.k==='win');
+    if(wr){ if(wchk.checked){ if(wr.freq<=0)wr.freq=8; if(wr.min<=0)wr.min=45; } else { wr.freq=0; wr.min=0; } }
+    renderMRows(); };
   $("#objModalClose").onclick=closeObjModal; $("#objModalCancel").onclick=closeObjModal;
   $("#objModalDelete").onclick=()=>deleteObj(id);
   $("#objModalSave").onclick=()=>saveObjModal(id);
 }
 function closeObjModal(){$("#objModal").classList.remove("on");}
+// Dienstleistungs-Zeilen (Standard + Custom) rendern
+function renderMRows(){
+  const eqOpt=(sel)=>EQUIPES.map(e=>`<option value="${e}" ${sel===e?"selected":""}>${EQ[e].label.split(' ')[0]}</option>`).join("");
+  const gRate=k=>((DATA.rates&&DATA.rates[k])||RATES_DEF[k]||0);
+  const turnOpt=(f)=>{const cur=freqToTurnus(f); return TURNUS.map(([v,fr,lb])=>`<option value="${v}" data-f="${fr}" ${cur===v?"selected":""}>${lb}</option>`).join("")+`<option value="indiv" ${cur==="indiv"?"selected":""}>individuell</option>`;};
+  const dayOpt=(d)=>WD_NAMES.map((n,i)=>`<option value="${i+1}" ${(+d===i+1)?"selected":""}>${n}</option>`).join("");
+  let h="";
+  MROWS.forEach((r,ri)=>{
+    const nameCell = r.custom
+      ? `<input type="text" id="m_lbl_${ri}" value="${esc(r.label)}" placeholder="Bezeichnung" style="width:150px">`
+      : `<span class="clbl" style="background:${svcColor(r)}"></span>${esc(r.label)}`;
+    const del = r.custom ? ` <button class="sm" data-del="${ri}" title="Löschen" style="color:#e74c3c;padding:1px 5px">🗑</button>` : '';
+    h+=`<tr>
+      <td>${nameCell}</td>
+      <td><select id="m_turnus_${ri}" style="width:104px">${turnOpt(r.freq)}</select></td>
+      <td class="n"><input type="number" id="m_freq_${ri}" value="${r.freq}" min="0" style="width:50px"></td>
+      <td class="n"><input type="number" id="m_min_${ri}" value="${r.min}" min="0" style="width:56px"></td>
+      <td class="n"><input type="number" id="m_rate_${ri}" value="${r.rate}" placeholder="${gRate(r.k)}" min="0" title="Ansatz CHF/h · leer = Standard ${gRate(r.k)}" style="width:56px"></td>
+      <td><select id="m_eq_${ri}" style="width:84px">${eqOpt(r.eq)}</select></td>
+      <td class="n"><label class="chk" style="gap:3px;justify-content:center"><input type="checkbox" id="m_fix_${ri}" ${r.fixed?"checked":""}></label>${del}</td></tr>
+      <tr data-fix="${ri}" ${r.fixed?"":`style="display:none"`}><td colspan="7" style="padding:2px 6px 8px 22px;background:rgba(127,127,127,.06)">
+        <span class="muted" style="font-size:12px">📌 fix: </span>
+        <select id="m_day_${ri}" style="width:54px">${dayOpt(r.day)}</select>
+        <span class="muted" style="font-size:12px"> von</span> <input type="time" id="m_from_${ri}" value="${r.from||'07:00'}" style="width:88px">
+        <span class="muted" style="font-size:12px"> bis</span> <input type="time" id="m_to_${ri}" value="${r.to||''}" style="width:88px">
+        <span class="muted" style="font-size:12px"> ab</span> <input type="date" id="m_start_${ri}" value="${r.start||''}" style="width:132px"></td></tr>`;
+  });
+  $("#m_tbody").innerHTML=h;
+  MROWS.forEach((r,ri)=>{
+    const ts=$("#m_turnus_"+ri), fi=$("#m_freq_"+ri);
+    if(ts&&fi){ ts.onchange=()=>{ if(ts.value!=="indiv") fi.value=ts.selectedOptions[0].dataset.f; };
+      fi.onchange=()=>{ ts.value=freqToTurnus(+fi.value); }; }
+    const fx=$("#m_fix_"+ri); if(fx) fx.onchange=()=>{ const row=document.querySelector('tr[data-fix="'+ri+'"]'); if(row) row.style.display=fx.checked?"":"none";
+      if(fx.checked){ const to=$("#m_to_"+ri); if(to&&!to.value) to.value=h2hm(hm2h(($("#m_from_"+ri)||{}).value||'07:00')+(+($("#m_min_"+ri)||{}).value||60)/60); } };
+  });
+  $$('#m_tbody [data-del]').forEach(b=>b.onclick=()=>{ collectMRows(); MROWS.splice(+b.dataset.del,1); renderMRows(); });
+}
+// aktuelle DOM-Werte in MROWS zurücklesen (vor Re-Render / Speichern)
+function collectMRows(){
+  MROWS.forEach((r,ri)=>{
+    const g=id=>$("#m_"+id+"_"+ri);
+    if(g("freq")) r.freq=+g("freq").value||0;
+    if(g("min")) r.min=+g("min").value||0;
+    if(g("rate")) r.rate=g("rate").value;
+    if(g("eq")) r.eq=g("eq").value;
+    if(g("lbl")) r.label=g("lbl").value;
+    if(g("fix")) r.fixed=g("fix").checked;
+    if(g("day")) r.day=+g("day").value||1;
+    if(g("from")) r.from=g("from").value;
+    if(g("to")) r.to=g("to").value;
+    if(g("start")) r.start=g("start").value;
+  });
+}
 function saveObjModal(id){
   const o=objById(id); if(!o)return;
   const before=new Set(objEquipes(o));
+  collectMRows();
   o.areaIn=+$("#m_areaIn").value||o.areaIn; o.areaGa=+$("#m_areaGa").value||0;
   o.pauschMt=+$("#m_pausch").value||0; o.pauschOn=$("#m_pauschOn").checked;
   o.services=[];
-  SVCLIST.forEach(([k])=>{const freq=+$("#m_freq_"+k).value||0, min=+$("#m_min_"+k).value||0, eq=$("#m_eq_"+k).value, rate=+$("#m_rate_"+k).value||0;
-    if(freq>0&&min>0){ const s={k,freq,min,eq}; if(rate>0) s.rate=rate; o.services.push(s); }});   // Equipe + optionaler Satz je Arbeit
+  MROWS.forEach(r=>{ const freq=+r.freq||0, min=+r.min||0; if(!(freq>0&&min>0)) return;
+    const s={k:r.k,freq,min,eq:r.eq}; const rate=+r.rate||0; if(rate>0) s.rate=rate;
+    if(r.custom){ s.custom=true; s.label=(String(r.label||'Leistung').trim())||'Leistung'; s.col='#7a8aa0'; }
+    if(r.fixed){ s.fixed=true; s.day=clamp(+r.day||1,1,5); s.from=r.from||'07:00';
+      const wf=hm2h(s.from), wt=r.to?hm2h(r.to):0;
+      if(wt>wf){ s.to=r.to; s.min=Math.round((wt-wf)*60); }   // Zeitfenster (von–bis) bestimmt die Dauer
+      else { s.to=h2hm(wf+min/60); }                          // sonst: Dauer → Endzeit
+      s.start=r.start||''; }
+    o.services.push(s); });   // Standard + Custom, optionaler Satz, optional fix (Wochentag/Zeit/Startdatum)
   o.winter=o.services.some(s=>s.k==="win");
   closeObjModal();
   // Betroffene Equipen (alt ∪ neu) neu packen → Objekt landet in den richtigen Touren
