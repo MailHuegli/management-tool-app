@@ -100,6 +100,19 @@ tr:hover td{background:var(--panel2)}
 .modalbox table{margin-top:8px}
 .modalbox .clbl{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
 .flash.on{opacity:1}
+/* Zugänglichkeit: Fachbegriffe erklären */
+.gloss{border-bottom:1px dotted var(--mut);cursor:help}
+.helpbtn{background:transparent;border:1px solid var(--line);border-radius:999px;width:26px;height:26px;padding:0;font-weight:700;line-height:1;color:var(--mut)}
+.helpbtn:hover{border-color:var(--acc);color:var(--acc)}
+.modalbox.help{max-width:680px}
+.gl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;margin:2px 0 12px}
+.gl dt{font-weight:600;color:var(--ink);white-space:nowrap}
+.gl dd{margin:0;color:var(--mut);font-size:13px}
+.codekey{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px}
+.codekey span{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--mut)}
+.codekey b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 5px;border-radius:6px;color:#fff;font-size:11px;font-weight:700}
+.helpsec{border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+.helpsec h4{margin:0 0 6px;font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -110,6 +123,7 @@ tr:hover td{background:var(--panel2)}
   <span class="pill" id="viewSub"></span>
   <div class="sp"></div>
   <span id="dataSrc" style="font-size:12px;color:var(--mut)" title="Woher die aktuellen Daten stammen">📭 leer</span>
+  <button class="helpbtn" id="btnHelp" title="Kurzerklärung & Begriffe – ohne Vorkenntnisse verständlich" aria-label="Hilfe">?</button>
   <button class="primary" id="btnRefresh" title="Kompletten Plan ins private Repo speichern">🔄 Aktualisieren</button>
 </div>
 
@@ -136,12 +150,12 @@ tr:hover td{background:var(--panel2)}
   <!-- ============ TOURENPLAN ============ -->
   <section class="chap on" data-chap="tourplan">
     <div class="pickbar">
-      <b>TOUR WÄHLEN</b>
+      <b class="gloss" title="Eine Tour = der Wochen-Rundgang einer Person. Kürzel: H=Hauswart, G=Garten, S=Spezial, M=Morgen, A=Abend. Details unter „?“ oben rechts.">TOUR WÄHLEN</b>
       <button class="sm" id="tourPrev">‹</button>
       <select id="tourSelect"></select>
       <button class="sm" id="tourNext">›</button>
       <span class="sp" style="flex:1"></span>
-      <span class="muted" id="kwLabel"></span>
+      <span class="muted gloss" id="kwLabel" title="Kalenderwoche – der Kalender unten zeigt genau diese Woche."></span>
     </div>
 
     <div class="kpi" id="planKpi" style="margin-bottom:12px"></div>
@@ -267,8 +281,8 @@ tr:hover td{background:var(--panel2)}
     <div class="card" style="margin-bottom:12px">
       <h3>Personalbedarf</h3>
       <div class="toolbar">
-        <label class="chk">Field-to-Office-Ratio <input type="number" id="ratio" min="6" max="15" value="10"></label>
-        <label class="chk">Sozialkosten % <input type="number" id="social" min="0" max="40" step="1"></label>
+        <label class="chk gloss" title="Wie viele Feld-Mitarbeitende (draussen auf den Objekten) eine Bürokraft (Admin/Disposition) betreut. 10 = 1 Bürokraft pro 10 Feldkräfte.">Feldkräfte je Bürokraft <input type="number" id="ratio" min="6" max="15" value="10"></label>
+        <label class="chk gloss" title="Arbeitgeber-Sozialabgaben (AHV/IV/EO, ALV, BVG, UVG, KTG) als Zuschlag auf den Bruttolohn.">Sozialkosten % <input type="number" id="social" min="0" max="40" step="1"></label>
         <button class="sm" id="btnResetPins">👥 Personal automatisch</button>
       </div>
       <table id="needTable"></table>
@@ -298,11 +312,53 @@ tr:hover td{background:var(--panel2)}
 
 </div>
 
-<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-27b</b></div>
+<div class="foot">Maintain Tourenplanung · Hauswartung / Gartenunterhalt / Unterhaltsreinigung (Morgen/Abend) · <b>Build 2026-07-27c</b></div>
 <div class="flash" id="flash"></div>
 
 <!-- Objekt-Settings-Modal: Arbeiten (Dauer + Frequenz) je Objekt anpassen -->
 <div id="objModal" class="modal"><div class="modalbox" id="objModalBox"></div></div>
+
+<!-- Hilfe / Begriffe – macht die App ohne Vorkenntnisse verständlich -->
+<div id="helpModal" class="modal"><div class="modalbox help">
+  <div style="display:flex;align-items:center;gap:8px">
+    <h3 style="margin:0">So funktioniert die Tourenplanung</h3>
+    <span class="sp" style="flex:1"></span>
+    <button class="sm" id="helpClose">✕ Schliessen</button>
+  </div>
+  <p class="muted" style="font-size:13px;margin:6px 0 12px">Diese App teilt alle Objekte (Liegenschaften) auf <b>Touren</b> auf – ein/e Mitarbeiter/in fährt eine Tour ab. Oben wählst du eine Tour, darunter siehst du die Wochen-Auslastung und den Kalender.</p>
+
+  <div class="helpsec"><h4>Die Kürzel der Touren</h4>
+    <div class="codekey">
+      <span><b style="background:#2d5a8a">H</b> Hauswart / Tagschicht</span>
+      <span><b style="background:#2f7d4f">G</b> Gartenequipe</span>
+      <span><b style="background:#a86a2d">S</b> Spezial-/Grundreinigung</span>
+      <span><b style="background:#2f6f7d">M</b> Morgenreinigung (ab 06:00)</span>
+      <span><b style="background:#7a4fae">A</b> Abendreinigung</span>
+    </div>
+    <p class="muted" style="font-size:12px;margin:0">Beispiel: <b>H03</b> = dritte Hauswart-Tour. Die Zahl ist nur eine laufende Nummer.</p>
+  </div>
+
+  <div class="helpsec"><h4>Begriffe in Zahlen &amp; Tabellen</h4>
+    <dl class="gl">
+      <dt>Auslastung</dt><dd>Wie voll eine Tour ist. 100 % = 42 Arbeitsstunden pro Woche und Person. Grün = ok, orange = knapp, rot = Überstunden.</dd>
+      <dt>Ziel&nbsp;%</dt><dd>Wie voll du die Tour <i>planen</i> willst. Tiefer = mehr Puffer und evtl. mehr Touren, höher = weniger Touren, aber voller.</dd>
+      <dt>Feld-FTE</dt><dd>Vollzeitstellen „im Feld" (auf den Objekten). FTE = Full-Time-Equivalent. 10,3 = so viel Arbeit wie 10,3 Vollzeit-Mitarbeitende.</dd>
+      <dt>Fahrtanteil</dt><dd>Anteil der Zeit, der auf Fahrten zwischen Objekten entfällt (statt auf Arbeit). Viel Fahrt = ineffiziente Route.</dd>
+      <dt>KW</dt><dd>Kalenderwoche (1–52). Der Kalender und die Jahres-Leiste zeigen jeweils eine Woche.</dd>
+      <dt>Turnus</dt><dd>Wie oft eine Arbeit anfällt – z. B. wöchentlich, monatlich, quartalsweise.</dd>
+      <dt>Equipe</dt><dd>Ein Team/Schichttyp (Hauswart, Garten, Morgen, Abend, Spezial). Objekte werden nur innerhalb derselben Equipe umgeplant.</dd>
+    </dl>
+  </div>
+
+  <div class="helpsec"><h4>Was kann ich tun?</h4>
+    <dl class="gl">
+      <dt>Tour ansehen</dt><dd>Oben „Tour wählen" – Kalender &amp; Auslastung aktualisieren sich.</dd>
+      <dt>Objekt umplanen</dt><dd>Im Kalender oder in der Wochenliste ein Objekt auf eine andere Tour-Karte (gleiche Equipe) ziehen.</dd>
+      <dt>Arbeiten anpassen</dt><dd>Reiter „Objekte" → ⚙ – Frequenz, Dauer, Stundensatz, Pauschale und feste Termine je Dienstleistung.</dd>
+      <dt>Neu verteilen</dt><dd>„🔄 Umplanen (optimieren)" balanciert alle Objekte automatisch auf die Touren.</dd>
+    </dl>
+  </div>
+</div></div>
 
 <script src="xlsx.full.min.js"></script>
 <script>
@@ -1078,9 +1134,9 @@ function renderPlanKpi(){
   const share=(wSum+dSum)?dSum/(wSum+dSum)*100:0;
   $("#planKpi").innerHTML=`
     <div class="box"><b>${tours}</b><span>Touren</span></div>
-    <div class="box"><b>${objs}</b><span>Objekte</span></div>
-    <div class="box"><b>${nf(c.fte,1)}</b><span>Feld-FTE</span></div>
-    <div class="box"><b class="${share>DETOUR_SHARE?'over':''}">${nf(share)}%</b><span>Fahrtanteil (Weg/Total)</span></div>
+    <div class="box"><b>${objs}</b><span class="gloss" title="Objekte = einzelne Liegenschaften, die betreut werden.">Objekte</span></div>
+    <div class="box"><b>${nf(c.fte,1)}</b><span class="gloss" title="Vollzeitstellen im Feld (auf den Objekten). FTE = Full-Time-Equivalent: so viel Arbeit wie X Vollzeit-Mitarbeitende.">Feld-FTE</span></div>
+    <div class="box"><b class="${share>DETOUR_SHARE?'over':''}">${nf(share)}%</b><span class="gloss" title="Anteil der Arbeitszeit, der auf Fahrten zwischen den Objekten entfällt. Hoch = viel Weg für wenig Arbeit.">Fahrtanteil (Weg/Total)</span></div>
     <div class="box"><b>${c.vehicles}</b><span>Fahrzeuge · ${chf(c.fzTotal)}</span></div>
     <div class="box"><b>${chf(c.total)}</b><span>Personalkosten/Jahr</span></div>`;
 }
@@ -1182,8 +1238,15 @@ function renderCalendar(t,wk){
       const hn=HOLIDAYS.find(h=>h.kw===curKW&&h.d===d+1);
       inner+=`<div style="position:absolute;top:40%;left:0;right:0;text-align:center;color:var(--mut)">🎌 ${hn?hn.n:"Feiertag"}</div>`;
     } else {
-      (wk.days[d]||[]).forEach(b=>{
-        const yy=y(b.s), hh=Math.max(10,(b.e-b.s)/(ax1-ax0)*H);
+      // nach Startzeit sortiert, damit ein Block mit Mindesthöhe nie in den nächsten hineinragt (Kalender-Überlappung vermeiden)
+      const list=[...(wk.days[d]||[])].sort((a,b)=>a.s-b.s);
+      list.forEach((b,bi)=>{
+        const yy=y(b.s);
+        const nextTop=(bi+1<list.length)?y(list[bi+1].s):(top+H);
+        const trueH=(b.e-b.s)/(ax1-ax0)*H;
+        // Mindesthöhe 10px für Lesbarkeit, aber hart gedeckelt auf den Beginn des Folgeblocks (1px Luft) → keine Überlappung
+        const cap=nextTop-yy-1;
+        const hh=Math.max(2,Math.min(Math.max(10,trueH),cap));
         const drag=(b.oid&&!b.cov)?`draggable="true" data-oid="${b.oid}" style="cursor:grab;`:`style="`;
         inner+=`<div class="blk ${b.cls}" ${drag}top:${yy}px;height:${hh}px;background:${b.col}" title="${esc(b.title||'')}">${esc(b.label)}<small>${esc(b.sub||"")}</small></div>`;
       });
@@ -1939,6 +2002,9 @@ let flashT;function flash(m){const f=$("#flash");f.textContent=m;f.classList.add
 
 /* ============ Events ============ */
 function wire(){
+  $("#btnHelp").onclick=()=>$("#helpModal").classList.add("on");
+  $("#helpClose").onclick=()=>$("#helpModal").classList.remove("on");
+  $("#helpModal").onclick=e=>{if(e.target.id==="helpModal")$("#helpModal").classList.remove("on");};
   $("#btnRefresh").onclick=ghSavePlan;
   $("#tourSelect").onchange=e=>selectTour(e.target.value);
   $("#tourPrev").onclick=()=>{const i=DATA.tours.findIndex(t=>t.id===curTour);selectTour(DATA.tours[(i-1+DATA.tours.length)%DATA.tours.length].id);};

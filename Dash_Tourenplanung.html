@@ -76,6 +76,18 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 .tips{display:flex;flex-direction:column;gap:6px}
 .tip{font-size:13px;border-left:3px solid var(--line);padding:5px 10px;background:var(--panel2);border-radius:6px}
 .tip.bad{border-left-color:var(--bad)} .tip.warn{border-left-color:var(--warn)} .tip.info{border-left-color:var(--mut)}
+/* Zugänglichkeit: Fachbegriffe erklären + Hilfe-Dialog */
+.gloss{border-bottom:1px dotted var(--mut);cursor:help}
+.helpbtn{background:transparent;border:1px solid var(--line);border-radius:999px;width:26px;height:26px;padding:0;font-weight:700;line-height:1;color:var(--mut)}
+.helpbtn:hover{border-color:var(--acc);color:var(--acc)}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px}
+.modal.on{display:flex}
+.modalbox{background:var(--panel);border:1px solid var(--acc);border-radius:12px;padding:16px;max-width:680px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.gl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;margin:2px 0 12px}
+.gl dt{font-weight:600;color:var(--ink);white-space:nowrap}
+.gl dd{margin:0;color:var(--mut);font-size:13px}
+.helpsec{border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+.helpsec h4{margin:0 0 6px;font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -85,7 +97,37 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
   <div class="status" id="status">bereit · lokaler Stand</div>
   <div class="sp"></div>
   <span class="muted" style="font-size:12px">Umsatz &amp; Kosten kalkuliert aus Tourenplan · echte Zahlen in „Eingaben"</span>
+  <button class="helpbtn" id="btnHelp" title="Kurzerklärung & Begriffe – ohne Vorkenntnisse verständlich" aria-label="Hilfe">?</button>
 </header>
+
+<!-- Hilfe / Begriffe – macht das Cockpit ohne Vorkenntnisse verständlich -->
+<div id="helpModal" class="modal"><div class="modalbox">
+  <div class="row"><h3 style="margin:0">So liest du das Cockpit</h3>
+    <span class="sp" style="flex:1"></span>
+    <button class="sm" id="helpClose">✕ Schliessen</button></div>
+  <p class="muted" style="font-size:13px;margin:6px 0 12px">Das Cockpit rechnet Umsatz und Kosten automatisch aus dem <b>Tourenplan</b>. Reale Werte trägst du im Reiter „Eingaben" ein – angehakte Zeilen überschreiben die Kalkulation.</p>
+
+  <div class="helpsec"><h4>Finanz-Begriffe</h4>
+    <dl class="gl">
+      <dt>Umsatz</dt><dd>Was du deinen Kunden fakturierst (Erlös), bevor Kosten abgezogen werden.</dd>
+      <dt>Kosten</dt><dd>Alle Ausgaben: Personal, Verwaltung, Fahrzeuge, Material.</dd>
+      <dt>EBIT</dt><dd>Betriebsgewinn = Umsatz − Kosten (vor Zinsen &amp; Steuern). Das, was operativ übrig bleibt.</dd>
+      <dt>EBIT-Marge</dt><dd>EBIT als Anteil vom Umsatz. 26 % = von 100 CHF Umsatz bleiben 26 CHF Gewinn.</dd>
+      <dt>Ist / Ziel</dt><dd>„Ist" = aktueller Stand, „Ziel" = geplanter/angestrebter Wert im Szenario.</dd>
+      <dt>Wasserfall</dt><dd>Diagramm, das Schritt für Schritt zeigt, wie aus dem Umsatz nach Abzug der Kosten der EBIT wird.</dd>
+    </dl>
+  </div>
+
+  <div class="helpsec"><h4>Betriebs-Begriffe</h4>
+    <dl class="gl">
+      <dt>Feld-FTE</dt><dd>Vollzeitstellen „im Feld" (auf den Objekten). FTE = Full-Time-Equivalent.</dd>
+      <dt>Auslastung</dt><dd>Wie voll eine Tour/Equipe ist. 100 % = 42 Arbeitsstunden pro Woche und Person.</dd>
+      <dt>Equipe</dt><dd>Team/Schichttyp: Hauswart, Garten, Spezial, Morgen, Abend.</dd>
+      <dt>Pauschale</dt><dd>Monatlicher Fixbetrag je Objekt (× 12 = Jahresumsatz), statt Abrechnung nach Stunden.</dd>
+      <dt>Benchmark</dt><dd>Vergleichswerte aus dem Markt (Branchenlöhne, übliche Stundensätze) zur Einordnung.</dd>
+    </dl>
+  </div>
+</div></div>
 
 <nav class="tabs" id="tabs"></nav>
 
@@ -158,7 +200,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
   <!-- PLANUNGS-REITER (teilen ein iframe) -->
   <section class="pane" data-tab="planung">
-    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260727b#view=tourplan"></iframe>
+    <iframe id="planFrame" src="WSG_Tourenplanung.html?v=20260727c#view=tourplan"></iframe>
   </section>
 
   <!-- BENCHMARK -->
@@ -199,7 +241,7 @@ iframe{width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border
 
 </div>
 
-<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-27b</b></div>
+<div class="foot">Maintain GmbH · Betriebs- &amp; Finanzsteuerung · App öffentlich, Daten privat · <b>Build 2026-07-27c</b></div>
 <div class="flash" id="flash"></div>
 
 <script src="xlsx.full.min.js"></script>
@@ -393,7 +435,7 @@ function overviewSummary(){
   html+=sec("Betrieb · Tourenplan",`<div class="ovgrid">
     <div class="ovtile"><b>${ops.tours}</b><span>Touren</span></div>
     <div class="ovtile"><b>${ops.objs}</b><span>Objekte</span></div>
-    <div class="ovtile"><b>${nf(ops.fte,1)}</b><span>Feld-FTE</span></div>
+    <div class="ovtile"><b>${nf(ops.fte,1)}</b><span class="gloss" title="Vollzeitstellen im Feld (auf den Objekten). FTE = Full-Time-Equivalent.">Feld-FTE</span></div>
     <div class="ovtile"><b>${ops.vehicles}</b><span>Fahrzeuge</span></div>
     <div class="ovtile"><b>${c.kunden!=null?c.kunden:'–'}</b><span>Kunden</span></div></div>`);
   if(c.byEq) html+=sec("Ø-Auslastung je Equipe",`<div class="ovgrid">`+
@@ -426,11 +468,11 @@ function overviewSummary(){
 }
 function kpiBoxes(r){
   const zielEbit=r.umsatz*M.sc.ziel/100;
-  return `<div class="box"><b>${chf(r.umsatz)}</b><span>Umsatz</span></div>
-    <div class="box"><b>${chf(r.kosten)}</b><span>Kosten</span></div>
-    <div class="box"><b class="${r.ebit>=0?'good':'bad'}">${chf(r.ebit)}</b><span>EBIT</span>
+  return `<div class="box"><b>${chf(r.umsatz)}</b><span class="gloss" title="Erlös: was du deinen Kunden fakturierst, bevor Kosten abgezogen werden.">Umsatz</span></div>
+    <div class="box"><b>${chf(r.kosten)}</b><span class="gloss" title="Alle Ausgaben: Personal, Verwaltung, Fahrzeuge, Material.">Kosten</span></div>
+    <div class="box"><b class="${r.ebit>=0?'good':'bad'}">${chf(r.ebit)}</b><span class="gloss" title="Betriebsgewinn = Umsatz − Kosten (vor Zinsen & Steuern).">EBIT</span>
       <div class="d muted">Ziel ${chf(zielEbit)}</div></div>
-    <div class="box"><b class="${r.marge>=M.sc.ziel?'good':r.marge>=0?'mid':'bad'}">${nf(r.marge,1)}%</b><span>EBIT-Marge</span></div>`;
+    <div class="box"><b class="${r.marge>=M.sc.ziel?'good':r.marge>=0?'mid':'bad'}">${nf(r.marge,1)}%</b><span class="gloss" title="EBIT als Anteil vom Umsatz. 26 % = von 100 CHF Umsatz bleiben 26 CHF Gewinn.">EBIT-Marge</span></div>`;
 }
 
 /* ---- Tourenplan aus localStorage lesen (grobe Betriebskennzahlen) ---- */
@@ -720,7 +762,7 @@ function switchTab(tab){
 function setPlanView(view){
   const f=$("#planFrame");
   if(frameReady) f.contentWindow.postMessage({wsgView:view},"*");
-  else f.src="WSG_Tourenplanung.html?v=20260727b#view="+view;
+  else f.src="WSG_Tourenplanung.html?v=20260727c#view="+view;
 }
 function renderActive(){
   if(curTab==="uebersicht")renderUebersicht();
@@ -741,6 +783,9 @@ function initTabs(){
 }
 function wire(){
   $("#btnRefresh").onclick=aktTop;
+  $("#btnHelp").onclick=()=>$("#helpModal").classList.add("on");
+  $("#helpClose").onclick=()=>$("#helpModal").classList.remove("on");
+  $("#helpModal").onclick=e=>{if(e.target.id==="helpModal")$("#helpModal").classList.remove("on");};
   $$('#finSeg button').forEach(b=>b.onclick=()=>{finMode=b.dataset.fin;$$('#finSeg button').forEach(x=>x.classList.toggle("on",x===b));renderFinanzen();});
   ["Preis","Wachs","Verr","Ziel"].forEach(s=>{const el=$("#s"+s);el.oninput=()=>{
     M.sc.preis=+$("#sPreis").value;M.sc.wachs=+$("#sWachs").value;M.sc.verr=+$("#sVerr").value;M.sc.ziel=+$("#sZiel").value;
